@@ -7,7 +7,8 @@
     <arg name="run_rviz" default="true" />
     <arg name="play_bagfile" default="true" />
     <arg name="record_bagfile" default="true" />
-    <arg name="savefile" default="$(env HOME)/lsd_slam_output.bag" />
+    
+    <arg name="savefile" default="$(env HOME)/bags/lsd_slam_from_bag_output.bag" />
 
     <arg name="driver_cv_camera" default="false" />
     <arg name="driver_openni2" default="false" />
@@ -51,17 +52,31 @@
     
     <!-- BEGIN Play from .bag file sensor configuration -->
     <arg name="path" default="$(find lsd_slam_core)" />
-    <arg name="file_1" default="LSD_room.bag" />
-    <arg name="file_2" default="" />
-    <arg name="file_3" default=""/>
+    <arg name="file_1" default="lsd_slam_input_2018-02-13-13-02-52.bag" />
+    <arg name="file_2" default="lsd_slam_input_indoor.bag" />
+    <arg name="file_3" default="rgbd_dataset_freiburg1_desk.bag"/>
     <arg name="bag_delay" default="5" />
     <node pkg="rosbag" type="play" name="player" output="screen" 
-          args="--delay=$(arg bag_delay) --rate=1 --quiet --clock $(env HOME)/freiburg_data/$(arg file_1) "
-          if="$(arg play_bagfile)"/>
+          args="--delay=$(arg bag_delay) --rate=1 --quiet --clock $(env HOME)/bags/$(arg file_1) "
+          if="$(arg play_bagfile)">
+        
+        <remap from="/camera/rgb/camera_info" to="/camera_info" if="$(arg play_bagfile)"/>
+        <remap from="/camera/rgb/image_raw" to="/image_raw" if="$(arg play_bagfile)"/>     
+        <remap from="/camera/depth_registered/image_raw" to="/depth" if="$(arg play_bagfile)"/>     
+        
+        <remap from="/camera/rgb/image_color" to="/image_raw" if="$(arg play_bagfile)"/>     
+        <remap from="/camera/depth/image" to="/depth" if="$(arg play_bagfile)"/>     
+        
+     
+         
+    </node>  
     <!-- END Play from .bag file sensor configuration -->
 
     <arg name="bag_topics" 
          default="/lsd_slam/graph /lsd_slam/keyframes /lsd_slam/liveframes"/> 
+    
+    <arg name="bag_topics_2" 
+         default="lsd_slam/depth lsd_slam/depth_gt lsd_slam/depth_corrected lsd_slam/depth_kf /camera/rgb/image_raw /camera_info"/> 
 
     <node pkg="rosbag" type="record" name="recorder" output="screen" 
           args="record -o $(arg savefile) $(arg bag_topics)"

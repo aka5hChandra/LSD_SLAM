@@ -42,6 +42,7 @@ ROSImageStreamThread::ROSImageStreamThread()
 	// subscribe
 	vid_channel = nh_.resolveName("image");
 	vid_sub          = nh_.subscribe(vid_channel,1, &ROSImageStreamThread::vidCb, this);
+        depth_sub        = nh_.subscribe(nh_.resolveName("depth"),1, &ROSImageStreamThread::depthCb, this);
 
 
 	// wait for cam calib
@@ -49,8 +50,11 @@ ROSImageStreamThread::ROSImageStreamThread()
 
 	// imagebuffer
 	imageBuffer = new NotifyBuffer<TimestampedMat>(8);
+        depthBuffer = new NotifyBuffer<TimestampedMat>(8);
 	undistorter = 0;
 	lastSEQ = 0;
+        lastSEQD = 0;
+        
 
 	haveCalib = false;
 }
@@ -58,6 +62,7 @@ ROSImageStreamThread::ROSImageStreamThread()
 ROSImageStreamThread::~ROSImageStreamThread()
 {
 	delete imageBuffer;
+        delete depthBuffer;
 }
 
 void ROSImageStreamThread::setCalibration(std::string file)
@@ -168,4 +173,38 @@ void ROSImageStreamThread::infoCb(const sensor_msgs::CameraInfoConstPtr info)
 	}
 }
 
+void ROSImageStreamThread:: depthCb(const sensor_msgs::ImageConstPtr depth){
+    if(!haveCalib) return;
+    
+        //std::cout<<"Found depth image "<<std::endl;
+	cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(depth, sensor_msgs::image_encodings::TYPE_32FC1);
+        if(depth->header.seq < (unsigned int)lastSEQD)
+	{
+		printf("Backward-Jump in SEQ detected, but ignoring for now.\n");
+		lastSEQD = 0;
+		return;
+	}
+	lastSEQD = depth->header.seq;
+
+	TimestampedMat bufferItem;
+	if(depth->header.stamp.toSec() != 0)
+		bufferItem.timestamp =  Timestamp(depth->header.stamp.toSec());
+	else
+		bufferItem.timestamp =  Timestamp(ros::Time::now().toSec());
+
+	if(undistorter != 0)
+	{
+		assert(undistorter->isValid());
+		undistorter->undistort(cv_ptr->image,bufferItem.data);
+	}
+	else
+	{
+		bufferItem.data = cv_ptr->image;
+	}
+        
+        //std::cout <<"Depth Check " <<bufferItem.data.rows <<" "<<bufferItem.data.cols<<" "<< bufferItem.data.at<double>(0,0)<<" "<< bufferItem.data.at<double>(40,90) << std::endl;; 
+
+	depthBuffer->pushBack(bufferItem);
+
+}
 }

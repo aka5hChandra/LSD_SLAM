@@ -237,11 +237,11 @@ int main( int argc, char** argv )
 
 		undistorter->undistort(imageDist, image);
 		assert(image.type() == CV_8U);
-
+                float * dummyData = new float [100];
 		if(runningIDX == 0)
 			system->randomInit(image.data, fakeTimeStamp, runningIDX);
 		else
-			system->trackFrame(image.data, runningIDX ,hz == 0,fakeTimeStamp);
+			system->trackFrame(image.data, runningIDX ,hz == 0,fakeTimeStamp,dummyData);
 		runningIDX++;
 		fakeTimeStamp+=0.03;
 

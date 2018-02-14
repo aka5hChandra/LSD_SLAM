@@ -30,6 +30,8 @@
 #include "util/globalFuncs.h"
 
 #include <iostream>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
 
 namespace lsd_slam
 {
@@ -39,7 +41,8 @@ LiveSLAMWrapper::LiveSLAMWrapper(InputImageStream* imageStream, Output3DWrapper*
 {
 	this->imageStream = imageStream;
 	this->outputWrapper = outputWrapper;
-	imageStream->getBuffer()->setReceiver(this);
+	imageStream->getImageBuffer()->setReceiver(this);
+        imageStream->getDepthBuffer()->setReceiver(this);
 
 	fx = imageStream->fx();
 	fy = imageStream->fy();
@@ -84,8 +87,8 @@ LiveSLAMWrapper::~LiveSLAMWrapper()
 void LiveSLAMWrapper::Loop()
 {
 	while (true) {
-		boost::unique_lock<boost::recursive_mutex> waitLock(imageStream->getBuffer()->getMutex());
-		while (!fullResetRequested && !(imageStream->getBuffer()->size() > 0)) {
+		boost::unique_lock<boost::recursive_mutex> waitLock(imageStream->getImageBuffer()->getMutex());
+		while (!fullResetRequested && !(imageStream->getImageBuffer()->size() > 0)) {
 			notifyCondition.wait(waitLock);
 		}
 		waitLock.unlock();
@@ -95,21 +98,42 @@ void LiveSLAMWrapper::Loop()
 		{
 			resetAll();
 			fullResetRequested = false;
-			if (!(imageStream->getBuffer()->size() > 0))
+			if (!(imageStream->getImageBuffer()->size() > 0))
 				continue;
 		}
 		
-		TimestampedMat image = imageStream->getBuffer()->first();
-		imageStream->getBuffer()->popFront();
+		TimestampedMat image = imageStream->getImageBuffer()->first();
+		imageStream->getImageBuffer()->popFront();
+                
+                
+                //get depth image
+                boost::unique_lock<boost::recursive_mutex> waitLock2(imageStream->getDepthBuffer()->getMutex());
+		while (!fullResetRequested && !(imageStream->getDepthBuffer()->size() > 0)) {
+			notifyCondition.wait(waitLock2);
+		}
+		waitLock2.unlock();
+		
+		/*
+		if(fullResetRequested)
+		{
+			resetAll();
+			fullResetRequested = false;
+			if (!(imageStream->getDepthBuffer()->size() > 0))
+				continue;
+		}
+		*/
+		TimestampedMat depth = imageStream->getDepthBuffer()->first();
+		imageStream->getDepthBuffer()->popFront();
+		
 		
 		// process image
 		//Util::displayImage("MyVideo", image.data);
-		newImageCallback(image.data, image.timestamp);
+		newImageCallback(image.data, depth.data, image.timestamp);
 	}
 }
 
 
-void LiveSLAMWrapper::newImageCallback(const cv::Mat& img, Timestamp imgTime)
+void LiveSLAMWrapper::newImageCallback(const cv::Mat& img, const cv::Mat& depth,  Timestamp imgTime)
 {
 	++ imageSeqNumber;
 
@@ -129,12 +153,25 @@ void LiveSLAMWrapper::newImageCallback(const cv::Mat& img, Timestamp imgTime)
 	// need to initialize
 	if(!isInitialized)
 	{
-		monoOdometry->randomInit(grayImg.data, imgTime.toSec(), 1);
+		//monoOdometry->randomInit(grayImg.data, imgTime.toSec(), 1);
+                /*
+                cv::namedWindow( "Display window", cv::WINDOW_AUTOSIZE );// Create a window for display.
+                cv::imshow( "Display window", depth );                   // Show our image inside it.
+                cv::waitKey(0); 
+                
+                float* depthData = (float*)depth.data;
+                for(int l = 0 ; l < depth.rows * depth.cols; l++)
+                {
+                  std::cout <<"depth check " << depthData[l] <<" ";
+                }
+                */
+                monoOdometry->gtDepthInit(grayImg.data, (float*)depth.data, imgTime.toSec(), 1);
+		
 		isInitialized = true;
 	}
 	else if(isInitialized && monoOdometry != nullptr)
 	{
-		monoOdometry->trackFrame(grayImg.data,imageSeqNumber,false,imgTime.toSec());
+		monoOdometry->trackFrame(grayImg.data,imageSeqNumber,false,imgTime.toSec(), (float*)depth.data);
 	}
 }
 

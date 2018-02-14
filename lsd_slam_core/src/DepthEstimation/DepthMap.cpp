@@ -57,6 +57,9 @@ DepthMap::DepthMap(int w, int h, const Eigen::Matrix3f& K)
 	debugImageHypothesisPropagation = cv::Mat(h,w, CV_8UC3);
 	debugImageStereoLines = cv::Mat(h,w, CV_8UC3);
 	debugImageDepth = cv::Mat(h,w, CV_8UC3);
+        
+        depth = cv::Mat::zeros(h,w,CV_32FC1);
+        valid = cv::Mat::ones(h,w,CV_8UC1);
 
 
 	this->K = K;
@@ -105,6 +108,9 @@ void DepthMap::reset()
 		pt->isValid = false;
 	for(DepthMapPixelHypothesis* pt = currentDepthMap+width*height-1; pt >= currentDepthMap; pt--)
 		pt->isValid = false;
+        
+        depth = cv::Mat::zeros(height,width,CV_32FC1);
+        valid = cv::Mat::ones(height,width,CV_8UC1);
 }
 
 
@@ -125,6 +131,7 @@ void DepthMap::observeDepthRow(int yMin, int yMax, RunningStats* stats)
 			if(hasHypothesis && keyFrameMaxGradBuf[idx] < MIN_ABS_GRAD_DECREASE)
 			{
 				target->isValid = false;
+                                valid.at<char>(y,x) = 0;
 				continue;
 			}
 
@@ -282,6 +289,10 @@ bool DepthMap::observeDepthCreate(const int &x, const int &y, const int &idx, Ru
 			result_idepth,
 			result_var,
 			VALIDITY_COUNTER_INITIAL_OBSERVE);
+        
+        valid.at<char>(y,x) = 1;
+        
+        depth.at<float>(y,x) = target->idepth;
 
 	if(plotStereoImages)
 		debugImageHypothesisHandling.at<cv::Vec3b>(y, x) = cv::Vec3b(255,255,255); // white for GOT CREATED
@@ -382,6 +393,7 @@ bool DepthMap::observeDepthUpdate(const int &x, const int &y, const int &idx, co
 		if(target->idepth_var > MAX_VAR)
 		{
 			target->isValid = false;
+                        valid.at<char>(y,x) = 0;
 			target->blacklisted--;
 		}
 		return false;
@@ -414,8 +426,10 @@ bool DepthMap::observeDepthUpdate(const int &x, const int &y, const int &idx, co
 			debugImageHypothesisHandling.at<cv::Vec3b>(y, x) = cv::Vec3b(255,255,0);	// Turkoise FOR big inconsistent
 
 		target->idepth_var *= FAIL_VAR_INC_FAC;
-		if(target->idepth_var > MAX_VAR) target->isValid = false;
-
+		if(target->idepth_var > MAX_VAR){ 
+                    target->isValid = false;
+                    valid.at<char>(y,x) = 0;
+                }
 		return false;
 	}
 
@@ -467,6 +481,8 @@ bool DepthMap::observeDepthUpdate(const int &x, const int &y, const int &idx, co
 
 		if(plotStereoImages)
 			debugImageHypothesisHandling.at<cv::Vec3b>(y, x) = cv::Vec3b(0,255,255); // yellow for GOT UPDATED
+                
+                depth.at<float>(y,x) = target->idepth;
 
 		return true;
 	}
@@ -496,6 +512,7 @@ void DepthMap::propagateDepth(Frame* new_keyframe)
 	for(DepthMapPixelHypothesis* pt = otherDepthMap+width*height-1; pt >= otherDepthMap; pt--)
 	{
 		pt->isValid = false;
+                //valid.at<char>(y,x) = 0;
 		pt->blacklisted = 0;
 	}
 
@@ -598,6 +615,7 @@ void DepthMap::propagateDepth(Frame* new_keyframe)
 					{
 						if(enablePrintDebugInfo) runningStats.num_prop_occluded++;
 						targetBest->isValid = false;
+                                                valid.at<char>(y,x) = 0;
 					}
 				}
 			}
@@ -611,6 +629,8 @@ void DepthMap::propagateDepth(Frame* new_keyframe)
 						new_idepth,
 						new_var,
 						source->validity_counter);
+                                
+                                valid.at<char>(y,x) = 1;
 
 			}
 			else
@@ -630,6 +650,8 @@ void DepthMap::propagateDepth(Frame* new_keyframe)
 						merged_new_idepth,
 						1.0f/(1.0f/targetBest->idepth_var + 1.0f/new_var),
 						merged_validity);
+                                
+                                valid.at<char>(y,x) = 1;
 			}
 		}
 
@@ -695,6 +717,8 @@ void DepthMap::regularizeDepthMapFillHolesRow(int yMin, int yMax, RunningStats* 
 						idepthObs,
 						VAR_RANDOM_INIT_INITIAL,
 						0);
+                                
+                                valid.at<char>(y,x) = 1;
 
 				if(enablePrintDebugInfo) stats->num_reg_created++;
 			}
@@ -828,6 +852,7 @@ template<bool removeOcclusions> void DepthMap::regularizeDepthMapRow(int validit
 				if(numOccluding > numNotOccluding)
 				{
 					dest->isValid = false;
+                                        valid.at<char>(y,x) = 0;
 					if(enablePrintDebugInfo) stats->num_reg_deleted_occluded++;
 
 					continue;
@@ -902,11 +927,16 @@ void DepthMap::initializeRandomly(Frame* new_frame)
 						VAR_RANDOM_INIT_INITIAL,
 						VAR_RANDOM_INIT_INITIAL,
 						20);
+                                
+                                valid.at<char>(y,x) = 1;
 			}
 			else
 			{
 				currentDepthMap[x+y*width].isValid = false;
+                                valid.at<char>(y,x) = 0;
 				currentDepthMap[x+y*width].blacklisted = 0;
+                                
+                                valid.at<char>(y,x) = 0;
 			}
 		}
 	}
@@ -944,11 +974,16 @@ void DepthMap::setFromExistingKF(Frame* kf)
 						*idepth,
 						*idepthVar,
 						*validity);
+                                
+                                valid.at<char>(y,x) = 1;
 			}
 			else
 			{
 				currentDepthMap[x+y*width].isValid = false;
+                                valid.at<char>(y,x) = 0;
 				currentDepthMap[x+y*width].blacklisted = (*idepthVar == -2) ? MIN_BLACKLIST-1 : 0;
+                                
+                                valid.at<char>(y,x) = 0;
 			}
 
 			idepth++;
@@ -1004,11 +1039,16 @@ void DepthMap::initializeFromGTDepth(Frame* new_frame)
 						VAR_GT_INIT_INITIAL,
 						VAR_GT_INIT_INITIAL,
 						20);
+                                
+                                valid.at<char>(y,x) = 1;
 			}
 			else
 			{
 				currentDepthMap[x+y*width].isValid = false;
+                                valid.at<char>(y,x) = 0;
 				currentDepthMap[x+y*width].blacklisted = 0;
+                                
+                                valid.at<char>(y,x) = 0;
 			}
 		}
 	}

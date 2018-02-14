@@ -82,7 +82,7 @@ public:
 	// first frame will return Identity = camToWord.
 	// returns camToWord transformation of the tracked frame.
 	// frameID needs to be monotonically increasing.
-	void trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp);
+	void trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp, float* gtDepth);
 
 	// finalizes the system, i.e. blocks and does all remaining loop-closures etc.
 	void finalize();
@@ -120,7 +120,7 @@ public:
 
 private:
 
-
+        float* gtDepth_;
 	// ============= EXCLUSIVELY TRACKING THREAD (+ init) ===============
 	TrackingReference* trackingReference; // tracking reference for current keyframe. only used by tracking.
 	SE3Tracker* tracker;
@@ -228,6 +228,9 @@ private:
 
 	bool depthMapScreenshotFlag;
 	std::string depthMapScreenshotFilename;
+        
+        float* curDepth;
+        
 
 
 	/** Merges the current keyframe optimization offset to all working entities. */
@@ -269,7 +272,7 @@ private:
 
 	void optimizationThreadLoop();
 
-
+        void getCurentDepthMap(Frame* frame , const Sophus::SE3& referenceToFrame, TrackingReference* reference);
 	
 };
 

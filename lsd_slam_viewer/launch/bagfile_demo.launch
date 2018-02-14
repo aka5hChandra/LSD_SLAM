@@ -5,7 +5,7 @@
     <arg name="run_lsd_slam_viewer" default="true" />
     <arg name="play_bagfile" default="false" />
     <arg name="record_bagfile" default="false" />
-    <arg name="bagfile" default="$(env HOME)/lsd_slam_output_2017-10-16-15-43-08.bag" />
+    <arg name="bagfile" default="$(env HOME)/bags/lsd_slam_from_bag_output_2018-02-13-19-51-06.bag" />
 
     <node name="viewer" pkg="lsd_slam_viewer" 
           type="viewer" output="screen" 

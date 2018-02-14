@@ -63,6 +63,7 @@ public:
 	// get called on ros-message callbacks
 	void vidCb(const sensor_msgs::ImageConstPtr img);
 	void infoCb(const sensor_msgs::CameraInfoConstPtr info);
+        void depthCb(const sensor_msgs::ImageConstPtr depth);
 
 private:
 
@@ -73,8 +74,10 @@ private:
 
 	std::string vid_channel;
 	ros::Subscriber vid_sub;
+        ros::Subscriber depth_sub;
 
 	int lastSEQ;
+        int lastSEQD;
 };
 
 }

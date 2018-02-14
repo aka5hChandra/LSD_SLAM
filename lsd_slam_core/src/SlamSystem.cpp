@@ -45,6 +45,10 @@
 #endif
 
 #include "opencv2/opencv.hpp"
+#include "opencv2/core/core.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/calib3d/calib3d.hpp"
+#include "DepthEstimation/DepthMapPixelHypothesis.h"
 
 using namespace lsd_slam;
 
@@ -122,6 +126,9 @@ SlamSystem::SlamSystem(int w, int h, Eigen::Matrix3f K, bool enableSLAM)
 	nTrackFrame = nOptimizationIteration = nFindConstraintsItaration = nFindReferences = 0;
 	nAvgTrackFrame = nAvgOptimizationIteration = nAvgFindConstraintsItaration = nAvgFindReferences = 0;
 	gettimeofday(&lastHzUpdate, NULL);
+        
+        curDepth = new float[w*h];
+        
 
 }
 
@@ -166,6 +173,8 @@ SlamSystem::~SlamSystem()
 
 
 	Util::closeAllWindows();
+        delete[] curDepth;
+        
 }
 
 void SlamSystem::setVisualization(Output3DWrapper* outputWrapper)
@@ -422,7 +431,7 @@ void SlamSystem::finishCurrentKeyframe()
 	}
 
 	if(outputWrapper!= 0)
-		outputWrapper->publishKeyframe(currentKeyFrame.get());
+		outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
 }
 
 void SlamSystem::discardCurrentKeyframe()
@@ -608,7 +617,7 @@ bool SlamSystem::updateKeyframe()
 
 
 	if(outputWrapper != 0 && continuousPCOutput && currentKeyFrame != 0)
-		outputWrapper->publishKeyframe(currentKeyFrame.get());
+		outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
 
 	return true;
 }
@@ -848,7 +857,7 @@ void SlamSystem::gtDepthInit(uchar* image, float* depth, double timeStamp, int i
 		keyFrameGraph->idToKeyFrame.insert(std::make_pair(currentKeyFrame->id(), currentKeyFrame));
 		keyFrameGraph->idToKeyFrameMutex.unlock();
 	}
-	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get());
+	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
 
 	printf("Done GT initialization!\n");
 }
@@ -876,7 +885,7 @@ void SlamSystem::randomInit(uchar* image, double timeStamp, int id)
 		keyFrameGraph->idToKeyFrame.insert(std::make_pair(currentKeyFrame->id(), currentKeyFrame));
 		keyFrameGraph->idToKeyFrameMutex.unlock();
 	}
-	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get());
+	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
 
 
 	if (displayDepthMap || depthMapScreenshotFlag)
@@ -887,8 +896,10 @@ void SlamSystem::randomInit(uchar* image, double timeStamp, int id)
 
 }
 
-void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp)
+void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp , float* gtDepth)
 {
+    
+        gtDepth_ = gtDepth;
 	// Create new frame
 	std::shared_ptr<Frame> trackingNewFrame(new Frame(frameID, width, height, K, timestamp, image));
 
@@ -934,7 +945,8 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
 			trackingNewFrame.get(),
 			frameToReference_initialEstimate);
 
-
+        //getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference);
+                
 	gettimeofday(&tv_end, NULL);
 	msTrackFrame = 0.9*msTrackFrame + 0.1*((tv_end.tv_sec-tv_start.tv_sec)*1000.0f + (tv_end.tv_usec-tv_start.tv_usec)/1000.0f);
 	nTrackFrame++;
@@ -989,7 +1001,10 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
 	//Sim3 lastTrackedCamToWorld = mostCurrentTrackedFrame->getScaledCamToWorld();//  mostCurrentTrackedFrame->TrackingParent->getScaledCamToWorld() * sim3FromSE3(mostCurrentTrackedFrame->thisToParent_SE3TrackingResult, 1.0);
 	if (outputWrapper != 0)
 	{
-		outputWrapper->publishTrackedFrame(trackingNewFrame.get());
+		outputWrapper->publishTrackedFrame(trackingNewFrame.get(),gtDepth);
+                //cv::Mat valid = cv::Mat(map->depth.rows , map->depth.cols , CV_8UC1, map->currentDepthMap->isValid).clone();
+                map->depth.setTo(0,map->valid == 0);// map->depth * valid;
+                outputWrapper->publishDepth(map->depth);
 	}
 
 
@@ -1691,4 +1706,133 @@ SE3 SlamSystem::getCurrentPoseEstimate()
 std::vector<FramePoseStruct*, Eigen::aligned_allocator<FramePoseStruct*> > SlamSystem::getAllPoses()
 {
 	return keyFrameGraph->allFramePoses;
+}
+//SlamSystem::
+void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceToFrame_0, TrackingReference* reference)
+{
+    
+ 
+        int level = 0;//QUICK_KF_CHECK_LVL;
+        
+        int w = frame->width(level);
+	int h = frame->height(level);
+        
+         
+        std::memset(curDepth, 0,  w*h *sizeof(float));
+	Eigen::Matrix3f KLvl = frame->K(level);
+	float fx_l = KLvl(0,0);
+	float fy_l = KLvl(1,1);
+	float cx_l = KLvl(0,2);
+	float cy_l = KLvl(1,2);
+        reference->makePointCloud(level);
+        const Eigen::Vector3f* refPoint = reference->posData[level];
+        int refNum = reference->numData[level];
+	const Eigen::Vector3f* refPoint_max = refPoint + refNum;
+        Sophus::SE3f referenceToFrame = referenceToFrame_0.inverse().cast<float>();
+	
+         
+	Eigen::Matrix3f rotMat = referenceToFrame.rotationMatrix();
+	Eigen::Vector3f transVec = referenceToFrame.translation();
+        
+        
+        std::vector<cv::Point3f> objectPoints;
+        std::vector<cv::Point2f> imagePoints;
+        
+	//std::cout <<"widt height "<<w<< " "<<h <<std::endl;
+	for(;refPoint<refPoint_max; refPoint++)
+	{
+                
+		Eigen::Vector3f Wxp = rotMat * (*refPoint) + transVec;
+                
+		float u_new = (Wxp[0]/Wxp[2])*fx_l + cx_l;
+		float v_new = (Wxp[1]/Wxp[2])*fy_l + cy_l;
+                if(!(u_new > 0 && v_new > 0 && u_new < w && v_new < h))
+		{
+			
+			continue;
+		}
+                
+                int id = int(u_new)  + (int(v_new)* w);
+                
+                //std::cout <<u_new<<" "<<v_new<<" "<<id<<" "<<Wxp[2]<<std::endl;
+                
+                curDepth[id]= Wxp[2];
+                
+                
+                objectPoints.push_back(cv::Point3f(Wxp[0],Wxp[1],Wxp[2]));
+        }
+         /*
+        cv::Mat intrisicMat(3, 3, cv::DataType<double>::type); // Intrisic matrix
+        intrisicMat.at<double>(0, 0) = fx_l;
+        intrisicMat.at<double>(1, 0) = 0;
+        intrisicMat.at<double>(2, 0) = 0;
+
+        intrisicMat.at<double>(0, 1) = 0;
+        intrisicMat.at<double>(1, 1) = fy_l;
+        intrisicMat.at<double>(2, 1) = 0;
+
+        intrisicMat.at<double>(0, 2) = cx_l;
+        intrisicMat.at<double>(1, 2) = cy_l;
+        intrisicMat.at<double>(2, 2) = 1;
+        
+        cv::Mat rMat(3, 3, cv::DataType<double>::type); // Rotation vector
+        
+        rMat.at<double>(0,0) = rotMat(0,0);
+        rMat.at<double>(0,1) = rotMat(0,1);
+        rMat.at<double>(0,2) = rotMat(0,2);
+        
+        rMat.at<double>(1,0) = rotMat(1,0);
+        rMat.at<double>(1,1) = rotMat(1,1);
+        rMat.at<double>(1,2) = rotMat(1,2);
+        
+        rMat.at<double>(2,0) = rotMat(2,0);
+        rMat.at<double>(2,1) = rotMat(2,1);
+        rMat.at<double>(2,2) = rotMat(2,2);
+        cv::Mat rVec(3, 1, cv::DataType<double>::type); // Rotation vector
+        Rodrigues(rMat, rVec);
+
+      
+      
+
+        cv::Mat tVec(3, 1, cv::DataType<double>::type); // Translation vector
+        tVec.at<double>(0) = transVec[0];
+        tVec.at<double>(1) = transVec[1];
+        tVec.at<double>(2) = transVec[2];
+        
+        cv::Mat distCoeffs(5, 1, cv::DataType<double>::type); 
+        
+        cv::Mat imagePoints_mat;
+        cv::projectPoints(objectPoints, rVec, tVec, intrisicMat, distCoeffs, imagePoints);
+        
+        for(int i = 0 ; i < imagePoints.size();i++){
+           // std::cout << imagePoints[i].x <<" " << imagePoints[i].y << std::endl;
+            float u_new = imagePoints[i].x;
+            float v_new = imagePoints[i].y;
+            if(!(u_new > 0 && v_new > 0 && u_new < w && v_new < h))
+		{
+			
+			continue;
+		}
+                
+                int id = int(u_new)  + (int(v_new)* w);
+                
+                //std::cout <<u_new<<" "<<v_new<<" "<<id<<" "<<Wxp[2]<<std::endl;
+                
+                curDepth[id]= objectPoints[i].z;
+        }
+          */ 
+        /*
+        //Ray tracing
+        Eigen::Vector3f origin << 0,0,0;
+        Eigen::Vector3f direction ;
+        float aspectRatio = float(w)/float(h);
+        for(int r = 0 ; r < h; r++){
+            for(int c = 0 ; c < w ; c++){
+                float xx = (2 * (c + 0.5 ) /w - 1)  * aspectRatio;
+                float yy = (2 * (r + 0.5) / h - 1);
+                direction << (xx,yy,-4);
+            }
+        }
+         */ 
+        
 }

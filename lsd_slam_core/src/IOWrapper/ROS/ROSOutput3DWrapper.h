@@ -22,7 +22,7 @@
 
 #include <ros/ros.h>
 #include "IOWrapper/Output3DWrapper.h"
-
+#include <image_transport/image_transport.h>
 
 namespace lsd_slam
 {
@@ -65,10 +65,10 @@ public:
 	virtual void publishKeyframeGraph(KeyFrameGraph* graph);
 
 	// publishes a keyframe. if that frame already existis, it is overwritten, otherwise it is added.
-	virtual void publishKeyframe(Frame* f);
+	virtual void publishKeyframe(Frame* f,float* gtDepth,float* curDepth);
 
 	// published a tracked frame that did not become a keyframe (i.e. has no depth data)
-	virtual void publishTrackedFrame(Frame* f);
+	virtual void publishTrackedFrame(Frame* f,float* gtDepth);
 
 	// publishes graph and all constraints, as well as updated KF poses.
 	virtual void publishTrajectory(std::vector<Eigen::Matrix<float, 3, 1>> trajectory, std::string identifier);
@@ -76,7 +76,10 @@ public:
 	virtual void publishTrajectoryIncrement(Eigen::Matrix<float, 3, 1> pt, std::string identifier);
 
 	virtual void publishDebugInfo(Eigen::Matrix<float, 20, 1> data);
-
+        
+        virtual void publishDepth(cv::Mat depth);
+        
+        virtual void publishDepth2(cv::Mat depth,cv::Mat gtDepth,cv::Mat corrDepth , cv::Mat keyFramDepth, cv::Mat grayImage);
 
 	int publishLvl;
 	
@@ -99,6 +102,22 @@ private:
 	std::string pose_channel;
 	ros::Publisher pose_publisher;
 
+        std::string depth_channel;
+	ros::Publisher depth_publisher;
+        
+        std::string depth_gt_channel;
+	ros::Publisher depth_gt_publisher;
+        
+        std::string depth_corr_channel;
+	ros::Publisher depth_corr_publisher;
+        
+        std::string keyFrame_channel;
+        ros::Publisher keyFrame_publisher;
+        
+        
+        std::string  grayImage_channel;
+        ros::Publisher grayImage_publisher;
+        
 	ros::NodeHandle nh_;
 };
 }

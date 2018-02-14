@@ -7,7 +7,7 @@
     <arg name="run_rviz" default="true" />
     <arg name="play_bagfile" default="false" />
     <arg name="record_bagfile" default="true" />
-    <arg name="savefile" default="$(env HOME)/lsd_slam_output.bag" />
+    <arg name="savefile" default="$(env HOME)/bags/lsd_slam_live_output.bag" />
 
     <arg name="driver_cv_camera" default="false" />
     <arg name="driver_openni2" default="false" />

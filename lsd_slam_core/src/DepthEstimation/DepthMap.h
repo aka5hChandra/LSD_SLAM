@@ -78,6 +78,9 @@ public:
 	cv::Mat debugImageStereoLines;
 	cv::Mat debugImageDepth;
 
+        cv::Mat depth;
+        cv::Mat valid;
+        
 	void initializeFromGTDepth(Frame* new_frame);
 	void initializeRandomly(Frame* new_frame);
 

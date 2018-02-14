@@ -62,6 +62,7 @@ endif()
 # uncomment this part to enable fabmap
 add_subdirectory(${PROJECT_SOURCE_DIR}/thirdparty/openFabMap)
 include_directories(
+      /opt/ros/kinetic/include
     ${PROJECT_SOURCE_DIR}/thirdparty/openFabMap/include
   ${OPENCV_INCLUDE_DIR}
 )
