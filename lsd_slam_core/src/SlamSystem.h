@@ -120,7 +120,19 @@ public:
 
 private:
 
-        float* gtDepth_;
+        float* sensorDepth_;
+        const float* curImage;
+         float* correctedDepth;
+         float* prevCorrectedDepth;
+         float* prevCorrectVar;
+         float* correctedDepthVar;
+         bool prevDepthCorrectionAvilable;
+         
+         float   scalesum;
+         float runCount ;
+         std::vector<cv::Point3f> prevObjectPoints;
+         
+         void projectToNewFrame(float *pyrIdepthVarSource,Eigen::Matrix3f rotMat,Eigen::Vector3f transVec,int w ,int h , float fx_l, float fy_l , float cx_l, float cy_l , float fxInv, float cxInv, float fyInv , float cyInv );
 	// ============= EXCLUSIVELY TRACKING THREAD (+ init) ===============
 	TrackingReference* trackingReference; // tracking reference for current keyframe. only used by tracking.
 	SE3Tracker* tracker;
@@ -177,6 +189,7 @@ private:
 	// Mapping: if (create) use candidate, reset create.
 	// => no locking required.
 	std::shared_ptr<Frame> latestTrackedFrame;
+        SE3 currentFrame;
 	bool createNewKeyFrame;
 
 
@@ -272,7 +285,7 @@ private:
 
 	void optimizationThreadLoop();
 
-        void getCurentDepthMap(Frame* frame , const Sophus::SE3& referenceToFrame, TrackingReference* reference);
+        void getCurentDepthMap(Frame* frame , const Sophus::SE3& referenceToFrame, TrackingReference* reference, float* sensorDepth);
 	
 };
 

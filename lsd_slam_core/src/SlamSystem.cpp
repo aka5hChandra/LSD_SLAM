@@ -128,8 +128,18 @@ SlamSystem::SlamSystem(int w, int h, Eigen::Matrix3f K, bool enableSLAM)
 	gettimeofday(&lastHzUpdate, NULL);
         
         curDepth = new float[w*h];
+        curImage ;//= new float[w*h];
         
-
+        correctedDepth = new float[w*h];
+        prevCorrectedDepth = new float[w*h];
+        prevCorrectVar = new float[w*h];
+        correctedDepthVar = new float[w*h];
+        
+         prevDepthCorrectionAvilable = false;
+         
+         scalesum = 0;
+         runCount = 0;
+        
 }
 
 SlamSystem::~SlamSystem()
@@ -430,8 +440,8 @@ void SlamSystem::finishCurrentKeyframe()
 		}
 	}
 
-	if(outputWrapper!= 0)
-		outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
+	//if(outputWrapper!= 0)
+		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 }
 
 void SlamSystem::discardCurrentKeyframe()
@@ -616,8 +626,8 @@ bool SlamSystem::updateKeyframe()
 
 
 
-	if(outputWrapper != 0 && continuousPCOutput && currentKeyFrame != 0)
-		outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
+	//if(outputWrapper != 0 && continuousPCOutput && currentKeyFrame != 0)
+		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 
 	return true;
 }
@@ -857,7 +867,7 @@ void SlamSystem::gtDepthInit(uchar* image, float* depth, double timeStamp, int i
 		keyFrameGraph->idToKeyFrame.insert(std::make_pair(currentKeyFrame->id(), currentKeyFrame));
 		keyFrameGraph->idToKeyFrameMutex.unlock();
 	}
-	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
+	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 
 	printf("Done GT initialization!\n");
 }
@@ -885,7 +895,7 @@ void SlamSystem::randomInit(uchar* image, double timeStamp, int id)
 		keyFrameGraph->idToKeyFrame.insert(std::make_pair(currentKeyFrame->id(), currentKeyFrame));
 		keyFrameGraph->idToKeyFrameMutex.unlock();
 	}
-	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),gtDepth_,curDepth);
+	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 
 
 	if (displayDepthMap || depthMapScreenshotFlag)
@@ -896,10 +906,10 @@ void SlamSystem::randomInit(uchar* image, double timeStamp, int id)
 
 }
 
-void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp , float* gtDepth)
+void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp , float* sensorDepth)
 {
     
-        gtDepth_ = gtDepth;
+        sensorDepth_ = sensorDepth;
 	// Create new frame
 	std::shared_ptr<Frame> trackingNewFrame(new Frame(frameID, width, height, K, timestamp, image));
 
@@ -945,8 +955,14 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
 			trackingNewFrame.get(),
 			frameToReference_initialEstimate);
 
-        //getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference);
+        getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,sensorDepth);
                 
+        
+        if(outputWrapper!= 0)
+		outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
+
+        
+        
 	gettimeofday(&tv_end, NULL);
 	msTrackFrame = 0.9*msTrackFrame + 0.1*((tv_end.tv_sec-tv_start.tv_sec)*1000.0f + (tv_end.tv_usec-tv_start.tv_usec)/1000.0f);
 	nTrackFrame++;
@@ -997,11 +1013,11 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
 
 	keyFrameGraph->addFrame(trackingNewFrame.get());
 
-
+        currentFrame = newRefToFrame_poseUpdate;
 	//Sim3 lastTrackedCamToWorld = mostCurrentTrackedFrame->getScaledCamToWorld();//  mostCurrentTrackedFrame->TrackingParent->getScaledCamToWorld() * sim3FromSE3(mostCurrentTrackedFrame->thisToParent_SE3TrackingResult, 1.0);
 	if (outputWrapper != 0)
 	{
-		outputWrapper->publishTrackedFrame(trackingNewFrame.get(),gtDepth);
+		outputWrapper->publishTrackedFrame(trackingNewFrame.get(),sensorDepth);
                 //cv::Mat valid = cv::Mat(map->depth.rows , map->depth.cols , CV_8UC1, map->currentDepthMap->isValid).clone();
                 map->depth.setTo(0,map->valid == 0);// map->depth * valid;
                 outputWrapper->publishDepth(map->depth);
@@ -1708,22 +1724,106 @@ std::vector<FramePoseStruct*, Eigen::aligned_allocator<FramePoseStruct*> > SlamS
 	return keyFrameGraph->allFramePoses;
 }
 //SlamSystem::
-void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceToFrame_0, TrackingReference* reference)
+
+void SlamSystem::projectToNewFrame(float *pyrIdepthSource,Eigen::Matrix3f rotMat,Eigen::Vector3f transVec,int w ,int h, float fx_l, float fy_l , float cx_l, float cy_l, float fxInv, float cxInv, float fyInv , float cyInv)
 {
     
+    float * transformedDepth = new float[sizeof(float) * w *h];
+     //std::cout <<"1 "<<std::endl;
+     std::memset(transformedDepth, 0,  w*h *sizeof(float));
+     //std::cout <<"2 "<<std::endl;
+    for(int x=1; x<w-1; x++){
+		for(int y=1; y<h-1; y++)
+		{
+			int idx = x + y*w;
+
+			if(std::isnan(pyrIdepthSource[idx]) || pyrIdepthSource[idx] <= 0 || pyrIdepthSource[idx] == 0) continue;
+
+			Eigen::Vector3f  posDataPT = ( pyrIdepthSource[idx]) * Eigen::Vector3f(fxInv *x+cxInv,fyInv *y+cyInv,1);
+               
+                       Eigen::Vector3f Wxp = rotMat * (posDataPT) + transVec;
+                
+                        float u_new = (Wxp[0]/Wxp[2])*fx_l + cx_l;
+                        float v_new = (Wxp[1]/Wxp[2])*fy_l + cy_l;
+                        if(!(u_new > 0 && v_new > 0 && u_new < w && v_new < h))
+                        {
+			
+                                continue;
+                        }
+                
+                        int id = int(u_new)  + (int(v_new)* w);
+                        
+                        transformedDepth[id]= Wxp[2];
+                    }
+    }
+    // std::cout <<"3 "<<std::endl;
+    
+    //std::cout <<"4 "<<std::endl;
+    //pyrIdepthSource = transformedDepth;
+     std::memcpy(pyrIdepthSource,transformedDepth,sizeof(float) * w * h);
+    delete [] transformedDepth;
+    //std::cout <<"5 "<<std::endl;
+}
  
+
+float computeNewMean(float mean1 , float var1 , float mean2, float var2)
+{
+
+    float nMean = ((mean1 * var2) + (mean2 * var1))/(var1 + var2);
+    return nMean;
+}
+float computeNewVar(float var1 , float var2){
+    float nVar = (var1 * var2) / (var1 + var2);
+    return nVar;
+
+}
+
+void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceToFrame_0, TrackingReference* reference, float* sensorDepth)
+{
+        //correctedDepth;
+        //prevCorrectedFrame;
+        /*
+        if(frame->id == 1){
+        //prevCorrectedDepth.reset(new Frame(1, width, height, K, frame->timeStamp, image));
+              //prevCorrectedDepth  = new TrackingReference();
+           }
+        */
         int level = 0;//QUICK_KF_CHECK_LVL;
         
         int w = frame->width(level);
 	int h = frame->height(level);
         
-         
+        
+        //std::cout << " 1 "<<std::endl; 
         std::memset(curDepth, 0,  w*h *sizeof(float));
+      
+        std::memset(correctedDepth, 0,  w*h *sizeof(float));
+        
+        /*
+        if(frame->id() == 1){
+            for(int i = 0 ; i < w *h ;i ++){
+                prevCorrectedDepth[i] = 1/trackingReference->keyframe[i];
+            }
+            return;
+        }
+        */
+        //std::cout << " 2 "<<std::endl;
+        //std::memset(curImage, 0,  w*h *sizeof(float));
+        
 	Eigen::Matrix3f KLvl = frame->K(level);
 	float fx_l = KLvl(0,0);
 	float fy_l = KLvl(1,1);
 	float cx_l = KLvl(0,2);
 	float cy_l = KLvl(1,2);
+        
+        Eigen::Matrix3f KInvLvl = frame->KInv(level);
+        
+        float fxInv =  KInvLvl(0,0);
+        float cxInv =  KInvLvl(1,1);
+        float fyInv =  KInvLvl(0,2);
+        float cyInv =  KInvLvl(1,2); 
+        
+       
         reference->makePointCloud(level);
         const Eigen::Vector3f* refPoint = reference->posData[level];
         int refNum = reference->numData[level];
@@ -1734,11 +1834,21 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
 	Eigen::Matrix3f rotMat = referenceToFrame.rotationMatrix();
 	Eigen::Vector3f transVec = referenceToFrame.translation();
         
-        
+        const float* color = frame->image(level);
         std::vector<cv::Point3f> objectPoints;
         std::vector<cv::Point2f> imagePoints;
+        curImage =  color;
         
+        const float* var = reference->keyframe->idepthVar(level);
 	//std::cout <<"widt height "<<w<< " "<<h <<std::endl;
+        int u = 0;
+        int v = 0;
+        int scaleCount = 0;
+        float sensorSum = 0;
+        float lsdSum = 0;
+        //float scale = 0;
+        
+        
 	for(;refPoint<refPoint_max; refPoint++)
 	{
                 
@@ -1754,13 +1864,238 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
                 
                 int id = int(u_new)  + (int(v_new)* w);
                 
+                //int id_orig = u + ( v * w);
+                
                 //std::cout <<u_new<<" "<<v_new<<" "<<id<<" "<<Wxp[2]<<std::endl;
                 
-                curDepth[id]= Wxp[2];
+                //curDepth[id]= Wxp[2];
+                
+                //curImage[id_orig] = color[id_orig];
+                 //std::cout << " 2.5 "<<std::endl;
+                 // std::cout << id <<" "<<!std::isnan(sensorDepth[id]) <<std::endl;
+                //compute scale
+                if((!std::isnan(sensorDepth[id])) && sensorDepth[id] > 0 && Wxp[2]> 0){
+                  //std::cout << id << std::endl;
+                    scaleCount++;
+                sensorSum +=sensorDepth[id];
+                lsdSum += Wxp[2];
+                    
+                }
+                    
                 
                 
-                objectPoints.push_back(cv::Point3f(Wxp[0],Wxp[1],Wxp[2]));
+                //objectPoints.push_back(cv::Point3f(Wxp[0],Wxp[1],Wxp[2]));
         }
+        
+        float scale = sensorSum / lsdSum;
+        
+        //std::cout <<"scale is " << scale << std::endl;
+        float sensorDepthMultiplyer =  0.001425;
+        refPoint = reference->posData[level];
+        std::memcpy(correctedDepth, sensorDepth,  w*h *sizeof(float));
+        //& !std::isinf(scale)
+        if(scale != 0   &  !std::isnan(scale) )
+        { 
+        for(;refPoint<refPoint_max; refPoint++)
+	{
+                
+		Eigen::Vector3f Wxp = (rotMat * (scale *  (*refPoint))) + transVec;
+                
+		float u_new = (Wxp[0]/Wxp[2])*fx_l + cx_l;
+		float v_new = (Wxp[1]/Wxp[2])*fy_l + cy_l;
+                if(!(u_new > 0 && v_new > 0 && u_new < w && v_new < h))
+		{
+			
+			continue;
+		}
+                
+                int id = int(u_new)  + (int(v_new)* w);
+                
+                curDepth[id]= Wxp[2];
+                float lsdDepth = curDepth[id];
+                float sensDepth = sensorDepth[id];
+                float senV =  sensorDepthMultiplyer * sensDepth * sensDepth;;
+                float lsdV = var[id];
+                
+                //& !std::isinf(sensDepth) 
+                 if((!std::isnan(sensDepth)  & sensDepth  >0)){
+                              correctedDepth[id] = sensDepth;
+                               float er = (sensDepth - lsdDepth) * (sensDepth - lsdDepth);
+                             if((!std::isnan(lsdDepth) & !std::isinf(lsdDepth) & lsdDepth  >0 & er < 1)){
+                                 
+                                  float newVar = computeNewVar( senV ,  lsdV);
+                                  float newDepth =  computeNewMean( sensDepth ,  senV , lsdDepth,  lsdV) ;
+                                 
+                                  correctedDepth[id] = newDepth;
+                                  //fusedVar(w,h) = newVar;
+                                  }
+                          
+                 } //&  !std::isinf(lsdDepth)
+                                else if ((!std::isnan(lsdDepth))  & lsdDepth  >0 ){
+                             correctedDepth[id] = lsdDepth;
+                              //fusedVar(w,h) = lsdvar;
+                              }
+                
+                //std::cout <<"here " << correctedDepth[id]  << std::endl;
+         }
+        }
+        
+        /*
+        
+        float maxVar = 100;
+         for(int id = 0 ; id < w *h ;id++){
+            //std::cout <<  curDepth[id] << std::endl;
+         //std::cout << (!std::isnan(sensorDepth[id]))<<" "<< (sensorDepth[id] > 0) <<" "<<(curDepth[id]> 0)<<" "<<((!std::isnan(sensorDepth[id])) && sensorDepth[id] > 0 && curDepth[id]> 0)<<std::endl;    
+        if((!std::isnan(sensorDepth[id])) && sensorDepth[id] > 0 && curDepth[id]> 0){
+                  //std::cout << id << std::endl;
+                scaleCount += 1;
+                sensorSum +=sensorDepth[id];
+                lsdSum += curDepth[id];
+               // std::cout << "scale cout "<<scaleCount << std::endl;
+        }
+      }
+        
+          //std::cout << " 2.6 "<<std::endl;
+          if(scaleCount!=0){
+           scale =    (sensorSum/lsdSum) ;
+          }
+        //std::cout <<"scale is " <<scaleCount<<" "<< lsdSum<< " "<<sensorSum<<" "<<scale << std::endl;
+        
+        
+        
+        const float* curVar = reference->keyframe->idepthVar(level);
+        //std::cout << " 3 "<<std::endl;
+         if(!prevDepthCorrectionAvilable){
+             //std::cout << " 4 "<<std::endl;
+                   std::memset(prevCorrectedDepth, 0,  w*h *sizeof(float));
+                 prevDepthCorrectionAvilable = !prevDepthCorrectionAvilable;
+                 for(int i = 0 ; i < w *h ;i ++){
+                    // if(!std::isnan(sensorDepth[i])){
+                       prevCorrectedDepth[i] = sensorDepth[i];
+                       prevCorrectVar[i] = 0.4;
+                       
+                        correctedDepth[i] = sensorDepth[i];
+                      correctedDepthVar[i] = 0.1;
+                     /*}else{
+                     
+                       prevCorrectedDepth[i] = 0;
+                       prevCorrectVar[i] = maxVar;
+                       
+                        correctedDepth[i] = 0;
+                      correctedDepthVar[i] = maxVar;
+                     }* /
+                       
+                      
+                 }
+         }else{
+             
+            //projectToNewFrame( prevCorrectedDepth, rotMat, transVec ,w,h, fx_l, fy_l ,  cx_l,  cy_l, fxInv , cxInv , fyInv, cyInv);
+             
+             //std::cout << " 6 "<<prevCorrectedDepth[7]<<std::endl;
+            //std::cout << " 1 "<<std::endl;
+      
+                for(int i = 0 ; i < w *h ;i ++){
+                     //curDepth[i];
+                     //prevCorrectedDepth[i]; 
+                     //sensorDepth[i]; 
+                     //curVar[i]
+                     //prevCorrectVar[i]
+                     //sensorVar;
+                    
+                    //if there is sensor mesurement and if error with previous measumrent 
+                    //is less
+                    //save for replacing later
+                     float corDe = correctedDepth[i];
+                     float corVar = correctedDepthVar[i];
+                     float sensorVar = maxVar;//0.1
+                     int imageSize = w * h;
+                     
+                       correctedDepth[i] = 0 ;
+                       correctedDepthVar[i] =  maxVar;
+                       //std::cout << " 2 "<<std::endl;
+      
+                    if(!std::isnan(sensorDepth[i]) & !std::isinf(sensorDepth[i])& sensorDepth[i] > 0){
+                        
+                        //std::cout << " 3 "<<std::endl;
+      
+                        float depthError = std::abs(sensorDepth[i] -prevCorrectedDepth[i] );
+                        //also chekc pose change for error
+                        //using windowing system instead of single value 
+                        
+                        //compute spatial variance for sensor depth
+                        if(((i - w - 1) >= 0 & (i + w + 1 < imageSize)  )){
+                            //std::cout << i << std::endl;
+                            float c  = (!std::isnan(sensorDepth[i]))?sensorDepth[i]:0;
+                            float n  = (!std::isnan(sensorDepth[i - w]))?sensorDepth[i - w]:0 ;
+                            float s  = (!std::isnan(sensorDepth[i + w]))?sensorDepth[i + w]:0 ;
+                            float w  = (!std::isnan(sensorDepth[i - 1]))?sensorDepth[i - 1]:0 ;
+                            float e  = (!std::isnan(sensorDepth[i + 1]))?sensorDepth[i + 1]:0 ;
+                            float ne = (!std::isnan(sensorDepth[int(i - w + 1)]))?sensorDepth[int(i - w + 1)]:0 ;
+                            float nw = (!std::isnan(sensorDepth[int(i - w - 1)]))?sensorDepth[int(i - w - 1)]:0 ;
+                            float se = (!std::isnan(sensorDepth[int(i + w + 1)]))?sensorDepth[int(i + w + 1)]:0 ;
+                            float sw = (!std::isnan(sensorDepth[int(i + w - 1)]))?sensorDepth[int(i + w - 1)]:0 ;
+                            
+                            float mean = (c + n + s + w + e + ne + nw + se + sw) /9; 
+                            float var = maxVar;
+                            if(mean != 0){
+                               var = (pow((c - mean),2) + pow((n- mean),2) + pow((s- mean),2) + pow((w- mean),2) + pow((e- mean),2) + pow((ne- mean),2) + pow((nw - mean),2)+ pow((se - mean),2)+ pow((sw- mean),2)) /9;
+                            }
+                            sensorVar = var;
+                        
+                        }
+                        //std::cout << " 4 "<<std::endl;
+      
+                        if(sensorVar <= 2 & depthError < 2.0){
+                            correctedDepth[i] = sensorDepth[i];
+                            correctedDepthVar[i] = sensorVar;
+                        }
+                        else if ( sensorVar != maxVar & depthError < 2.0 ){
+                        
+                            correctedDepth[i] = computeNewMean(sensorDepth[i], sensorVar , prevCorrectedDepth[i], prevCorrectVar[i]);
+                            correctedDepthVar[i] = computeNewVar(sensorVar, prevCorrectVar[i]);
+                        }
+                        //std::cout << " 5 "<<std::endl;
+      
+                        
+                    }
+                       
+                     if(sensorVar == maxVar)   {
+                    //std::cout << " 6 "<<std::endl;
+      
+                    if(!std::isnan(curDepth[i]) & !std::isinf(curDepth[i])& curDepth[i] > 0){
+                        float scaledDepth = curDepth[i] * scale;
+                        curDepth[i] = scaledDepth;
+                        float depthError = std::abs(scaledDepth -prevCorrectedDepth[i] );
+                        //also chekc pose change for error
+                        //using windowing system instead of single value 
+                         if(depthError < 2.0){
+                            correctedDepth[i] = scaledDepth;
+                            correctedDepthVar[i] = curVar[i];
+                        }else{
+                        
+                            correctedDepth[i] = computeNewMean(scaledDepth, curVar[i] , prevCorrectedDepth[i], prevCorrectVar[i]);
+                            correctedDepthVar[i] = computeNewVar(curVar[i], prevCorrectVar[i]);
+                        }
+                        //std::cout << " 7 "<<std::endl;
+      
+                    }
+                     
+                      
+                     }
+                     /*
+                     else{
+                         correctedDepth[i] = 0;
+                         correctedDepthVar[i] = maxVar;
+                     
+                     
+                     }* /
+                       prevCorrectedDepth[i] = corDe;
+                       //prevCorrectVar[i] = corVar;
+                }
+             //std::cout << " 8 "<<std::endl;
+        }
+        */
+       
          /*
         cv::Mat intrisicMat(3, 3, cv::DataType<double>::type); // Intrisic matrix
         intrisicMat.at<double>(0, 0) = fx_l;
