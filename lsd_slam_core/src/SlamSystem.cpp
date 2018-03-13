@@ -139,7 +139,8 @@ SlamSystem::SlamSystem(int w, int h, Eigen::Matrix3f K, bool enableSLAM)
          
          scalesum = 0;
          runCount = 0;
-        
+         fuseAllframes = true;
+        sensorDepth_ = NULL;
 }
 
 SlamSystem::~SlamSystem()
@@ -439,7 +440,8 @@ void SlamSystem::finishCurrentKeyframe()
 			newKeyFrameMutex.unlock();
 		}
 	}
-
+        
+        //updateGlobalScale();
 	//if(outputWrapper!= 0)
 		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 }
@@ -505,7 +507,14 @@ void SlamSystem::createNewCurrentKeyframe(std::shared_ptr<Frame> newKeyframeCand
 
 	currentKeyFrameMutex.lock();
 	currentKeyFrame = newKeyframeCandidate;
+        //updateGlobalScale();
 	currentKeyFrameMutex.unlock();
+        
+        
+         if(outputWrapper!= 0)
+	{	
+            ///outputWrapper->publishKeyframe(currentKeyFrame.get(),(float*)currentKeyFrame.get()->sensordepth.data,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth,currentKeyFrame.get());
+        }
 }
 void SlamSystem::loadNewCurrentKeyframe(Frame* keyframeToLoad)
 {
@@ -520,6 +529,7 @@ void SlamSystem::loadNewCurrentKeyframe(Frame* keyframeToLoad)
 	currentKeyFrameMutex.lock();
 	currentKeyFrame = keyFrameGraph->idToKeyFrame.find(keyframeToLoad->id())->second;
 	currentKeyFrame->depthHasBeenUpdatedFlag = false;
+        //updateGlobalScale();
 	currentKeyFrameMutex.unlock();
 }
 
@@ -625,14 +635,49 @@ bool SlamSystem::updateKeyframe()
 	}
 
 
-
+        //updateGlobalScale();
 	//if(outputWrapper != 0 && continuousPCOutput && currentKeyFrame != 0)
 		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 
 	return true;
 }
 
+void SlamSystem::updateGlobalScale()
+{
+    int level = 0;
+    Frame* kFrame = currentKeyFrame.get();
+    int w = kFrame->width(level);
+    int h = kFrame->height(level);
+    const float* invDepht = kFrame->idepth(level);
+    float lsdSum = 0;
+    float sensorSum = 0;
+    for(int i =0; i < w * h ; i++ ){
+        float kfInvDep = invDepht[i];
+        float sensorDep = sensorDepth_[i];
+        if((!std::isnan(kfInvDep)  & kfInvDep  >0) & (!std::isnan(sensorDep)  & sensorDep  >0)){
+            lsdSum += 1/kfInvDep;
+            sensorSum += sensorDep;
+       
+        }
+      
+    }
+      globalScale = sensorSum / lsdSum;
+      //std::cout <<"scale "<<globalScale<<std::endl;
+      
+      
+       if(!fuseAllframes & sensorDepth_ != NULL)
+        {
+           SE3 newRefToFrame_poseUpdate;
+        //getCurentDepthMap( currentKeyFrame.get(), newRefToFrame_poseUpdate,  trackingReference,sensorDepth_);
+                
+        
+        //if(outputWrapper!= 0)
+		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 
+        }
+        
+	
+}
 void SlamSystem::addTimingSamples()
 {
 	map->addTimingSample();
@@ -847,15 +892,15 @@ bool SlamSystem::doMappingIteration()
 }
 
 
-void SlamSystem::gtDepthInit(uchar* image, float* depth, double timeStamp, int id)
+void SlamSystem::gtDepthInit(uchar* image, const cv::Mat& depth, double timeStamp, int id)
 {
 	printf("Doing GT initialization!\n");
 
 	currentKeyFrameMutex.lock();
-
-	currentKeyFrame.reset(new Frame(id, width, height, K, timeStamp, image));
-	currentKeyFrame->setDepthFromGroundTruth(depth);
-
+        
+	currentKeyFrame.reset(new Frame(id, width, height, K, timeStamp, image,depth));
+	currentKeyFrame->setDepthFromGroundTruth((float*)depth.data);
+        globalScale = 1;
 	map->initializeFromGTDepth(currentKeyFrame.get());
 	keyFrameGraph->addFrame(currentKeyFrame.get());
 
@@ -867,7 +912,7 @@ void SlamSystem::gtDepthInit(uchar* image, float* depth, double timeStamp, int i
 		keyFrameGraph->idToKeyFrame.insert(std::make_pair(currentKeyFrame->id(), currentKeyFrame));
 		keyFrameGraph->idToKeyFrameMutex.unlock();
 	}
-	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
+	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth,currentKeyFrame.get());
 
 	printf("Done GT initialization!\n");
 }
@@ -882,8 +927,9 @@ void SlamSystem::randomInit(uchar* image, double timeStamp, int id)
 
 
 	currentKeyFrameMutex.lock();
-
-	currentKeyFrame.reset(new Frame(id, width, height, K, timeStamp, image));
+        cv::Mat dummy;
+	currentKeyFrame.reset(new Frame(id, width, height, K, timeStamp, image,dummy));
+        globalScale = 1;
 	map->initializeRandomly(currentKeyFrame.get());
 	keyFrameGraph->addFrame(currentKeyFrame.get());
 
@@ -895,7 +941,7 @@ void SlamSystem::randomInit(uchar* image, double timeStamp, int id)
 		keyFrameGraph->idToKeyFrame.insert(std::make_pair(currentKeyFrame->id(), currentKeyFrame));
 		keyFrameGraph->idToKeyFrameMutex.unlock();
 	}
-	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
+	if(continuousPCOutput && outputWrapper != 0) outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth,currentKeyFrame.get());
 
 
 	if (displayDepthMap || depthMapScreenshotFlag)
@@ -906,12 +952,12 @@ void SlamSystem::randomInit(uchar* image, double timeStamp, int id)
 
 }
 
-void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp , float* sensorDepth)
+void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp , const cv::Mat& sensorDepth)
 {
     
-        sensorDepth_ = sensorDepth;
+        sensorDepth_ = (float*)sensorDepth.data;
 	// Create new frame
-	std::shared_ptr<Frame> trackingNewFrame(new Frame(frameID, width, height, K, timestamp, image));
+	std::shared_ptr<Frame> trackingNewFrame(new Frame(frameID, width, height, K, timestamp, image,sensorDepth));
 
 	if(!trackingIsGood)
 	{
@@ -954,14 +1000,17 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
 			trackingReference,
 			trackingNewFrame.get(),
 			frameToReference_initialEstimate);
-
-        getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,sensorDepth);
+        /*
+        if(fuseAllframes)
+        {
+        //getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,sensorDepth);
                 
-        
+         const float* color = trackingNewFrame.get()->image(0);
+        curImage =  color;
         if(outputWrapper!= 0)
-		outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
+		outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,newRefToFrame_poseUpdate,correctedDepth,prevCorrectedDepth);
 
-        
+        }*/
         
 	gettimeofday(&tv_end, NULL);
 	msTrackFrame = 0.9*msTrackFrame + 0.1*((tv_end.tv_sec-tv_start.tv_sec)*1000.0f + (tv_end.tv_usec-tv_start.tv_usec)/1000.0f);
@@ -1017,12 +1066,23 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
 	//Sim3 lastTrackedCamToWorld = mostCurrentTrackedFrame->getScaledCamToWorld();//  mostCurrentTrackedFrame->TrackingParent->getScaledCamToWorld() * sim3FromSE3(mostCurrentTrackedFrame->thisToParent_SE3TrackingResult, 1.0);
 	if (outputWrapper != 0)
 	{
-		outputWrapper->publishTrackedFrame(trackingNewFrame.get(),sensorDepth);
+		outputWrapper->publishTrackedFrame(trackingNewFrame.get(),sensorDepth_);
                 //cv::Mat valid = cv::Mat(map->depth.rows , map->depth.cols , CV_8UC1, map->currentDepthMap->isValid).clone();
                 map->depth.setTo(0,map->valid == 0);// map->depth * valid;
                 outputWrapper->publishDepth(map->depth);
 	}
-
+         if(fuseAllframes)
+        {
+        //getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,sensorDepth);
+                
+         const float* color = trackingNewFrame.get()->image(0);
+        curImage =  color;
+        if(outputWrapper!= 0)
+	{	
+            outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,newRefToFrame_poseUpdate,correctedDepth,prevCorrectedDepth,trackingNewFrame.get());
+             //outputWrapper->publishKeyframe(currentKeyFrame.get(),(float*)currentKeyFrame.get()->sensordepth.data,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth,currentKeyFrame.get())
+        }
+        }
 
 	// Keyframe selection
 	latestTrackedFrame = trackingNewFrame;
@@ -1828,18 +1888,23 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
         const Eigen::Vector3f* refPoint = reference->posData[level];
         int refNum = reference->numData[level];
 	const Eigen::Vector3f* refPoint_max = refPoint + refNum;
+        Eigen::Matrix3f rotMat ;
+	Eigen::Vector3f transVec;
+        if (fuseAllframes){
         Sophus::SE3f referenceToFrame = referenceToFrame_0.inverse().cast<float>();
 	
          
 	Eigen::Matrix3f rotMat = referenceToFrame.rotationMatrix();
 	Eigen::Vector3f transVec = referenceToFrame.translation();
-        
+        }
         const float* color = frame->image(level);
+        curImage =  color;
         std::vector<cv::Point3f> objectPoints;
         std::vector<cv::Point2f> imagePoints;
-        curImage =  color;
         
         const float* var = reference->keyframe->idepthVar(level);
+        /*
+        
 	//std::cout <<"widt height "<<w<< " "<<h <<std::endl;
         int u = 0;
         int v = 0;
@@ -1888,8 +1953,9 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
         }
         
         float scale = sensorSum / lsdSum;
-        
-        //std::cout <<"scale is " << scale << std::endl;
+         */
+        float scale = globalScale;
+       // std::cout <<"scale is " << scale << std::endl;
         float sensorDepthMultiplyer =  0.001425;
         refPoint = reference->posData[level];
         std::memcpy(correctedDepth, sensorDepth,  w*h *sizeof(float));
@@ -1898,9 +1964,12 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
         { 
         for(;refPoint<refPoint_max; refPoint++)
 	{
-                
-		Eigen::Vector3f Wxp = (rotMat * (scale *  (*refPoint))) + transVec;
-                
+            Eigen::Vector3f Wxp ;
+            if (fuseAllframes)
+		 Wxp = (rotMat * (scale *  (*refPoint))) + transVec;
+            else
+                Wxp = (scale *  (*refPoint));
+            
 		float u_new = (Wxp[0]/Wxp[2])*fx_l + cx_l;
 		float v_new = (Wxp[1]/Wxp[2])*fy_l + cy_l;
                 if(!(u_new > 0 && v_new > 0 && u_new < w && v_new < h))

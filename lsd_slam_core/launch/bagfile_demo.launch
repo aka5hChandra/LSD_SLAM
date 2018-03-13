@@ -53,11 +53,11 @@
     <!-- BEGIN Play from .bag file sensor configuration -->
     <arg name="path" default="$(find lsd_slam_core)" />
     <arg name="file_1" default="lsd_slam_input_indoor.bag" />
-    <arg name="file_2" default="lsd_slam_input_outdoor_stairs.bag" />
-    <arg name="file_3" default="rgbd_dataset_freiburg1_xyz.bag"/>
+    <arg name="file_2" default="lsd_slam_input_indoor.bag" />
+    <arg name="file_3" default="lsd_slam_input_bottle.bag"/>
     <arg name="bag_delay" default="5" />
     <node pkg="rosbag" type="play" name="player" output="screen" 
-          args="--delay=$(arg bag_delay) --rate=1 --quiet --clock $(env HOME)/bags/$(arg file_1) "
+          args="--delay=$(arg bag_delay) --rate=1 --quiet --clock $(env HOME)/bags/$(arg file_2) "
           if="$(arg play_bagfile)">
         
         <remap from="/camera/rgb/camera_info" to="/camera_info" if="$(arg play_bagfile)"/>
@@ -79,11 +79,13 @@
          default="lsd_slam/pose lsd_slam/depth lsd_slam/depth_gt lsd_slam/depth_corrected lsd_slam/depth_kf /camera/rgb/image_raw /camera_info lsd_slam/depth_var"/> 
 
       <arg name="bag_topics_3" 
-         default=" lsd_slam/depth lsd_slam/depth_gt lsd_slam/depth_var lsd_slam/depth_corrected /camera/rgb/image_raw /camera_info "/> 
+         default=" lsd_slam/depth lsd_slam/depth_gt lsd_slam/depth_var lsd_slam/depth_kf lsd_slam/depth_corrected /camera/rgb/image_raw /camera_info "/> 
+ <arg name="bag_topics_4" 
+         default="lsd_slam/scale lsd_slam/pose lsd_slam/depth_gt r lsd_slam/depth_kf  lsd_slam/depth_var /camera/rgb/image_raw /camera_info "/> 
 
     
     <node pkg="rosbag" type="record" name="recorder" output="screen" 
-          args="record -o $(arg savefile) $(arg bag_topics_3)"
+          args="record -o $(arg savefile) $(arg bag_topics_4)"
           if="$(arg record_bagfile)"/>
 
 </launch>

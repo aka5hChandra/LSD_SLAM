@@ -74,7 +74,7 @@ public:
 	~SlamSystem();
 
 	void randomInit(uchar* image, double timeStamp, int id);
-	void gtDepthInit(uchar* image, float* depth, double timeStamp, int id);
+	void gtDepthInit(uchar* image, const cv::Mat& depth, double timeStamp, int id);
 
 	
 
@@ -82,7 +82,7 @@ public:
 	// first frame will return Identity = camToWord.
 	// returns camToWord transformation of the tracked frame.
 	// frameID needs to be monotonically increasing.
-	void trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp, float* gtDepth);
+	void trackFrame(uchar* image, unsigned int frameID, bool blockUntilMapped, double timestamp, const cv::Mat& gtDepth);
 
 	// finalizes the system, i.e. blocks and does all remaining loop-closures etc.
 	void finalize();
@@ -130,8 +130,10 @@ private:
          
          float   scalesum;
          float runCount ;
+         float globalScale;
          std::vector<cv::Point3f> prevObjectPoints;
-         
+        
+         void updateGlobalScale();
          void projectToNewFrame(float *pyrIdepthVarSource,Eigen::Matrix3f rotMat,Eigen::Vector3f transVec,int w ,int h , float fx_l, float fy_l , float cx_l, float cy_l , float fxInv, float cxInv, float fyInv , float cyInv );
 	// ============= EXCLUSIVELY TRACKING THREAD (+ init) ===============
 	TrackingReference* trackingReference; // tracking reference for current keyframe. only used by tracking.
@@ -226,7 +228,7 @@ private:
 	boost::mutex newConstraintMutex;
 	boost::condition_variable newConstraintCreatedSignal;
 	boost::mutex g2oGraphAccessMutex;
-
+        bool fuseAllframes;
 
 
 	// optimization merging. SET in Optimization, merged in Mapping.

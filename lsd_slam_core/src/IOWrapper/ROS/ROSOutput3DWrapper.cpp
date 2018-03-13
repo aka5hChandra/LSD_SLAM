@@ -21,6 +21,7 @@
 #include "ROSOutput3DWrapper.h"
 #include "util/SophusUtil.h"
 #include <ros/ros.h>
+#include "std_msgs/Float32.h"
 #include "util/settings.h"
 
 
@@ -83,8 +84,11 @@ ROSOutput3DWrapper::ROSOutput3DWrapper(int width, int height)
         
         depth_var_channel = nh_.resolveName("lsd_slam/depth_var");;
         depth_var_publisher = nh_.advertise<sensor_msgs::Image>(depth_var_channel,1);
- 
         
+        scale_channel = nh_.resolveName("lsd_slam/scale");; 
+        scale_publisher = nh_.advertise<std_msgs::Float32>(scale_channel,1);
+        
+
 	publishLvl=0;
 }
 
@@ -93,11 +97,11 @@ ROSOutput3DWrapper::~ROSOutput3DWrapper()
 }
 
 
-void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* curentDepth_array, const float* curImage, SE3 camToWorld,float* correctedDepth,float* correctedDepthVar)
+void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* curentDepth_array, const float* curImage, SE3 camToKeyframe,float* correctedDepth,float* correctedDepthVar, Frame* curFame)
 {
 	lsd_slam_viewer::keyframeMsg fMsg;
 
-
+        std::cout <<"pyub "<<std::endl;
 	boost::shared_lock<boost::shared_mutex> lock = f->getActiveLock();
 
 	fMsg.id = f->id();
@@ -128,12 +132,13 @@ void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* cu
         float *corrDepth_array = new float[h*w];
         unsigned char *gray_img = new unsigned char[h*w];
         float* depth_var_array = new float[h*w];
+        float* gtDepth_array_local = new float[h*w];
 	for(int idx=0;idx < w*h; idx++)
 	{
                 keyFrameDepth_array[idx] = idepth[idx];//correctedDepthVar[idx];//
-                gray_img[idx] = (unsigned char) curImage[idx];
-                //depth_var_array[idx] = idepthVar[idx];
-                
+                gray_img[idx] = (unsigned char) color[idx];//curImage[idx];
+                depth_var_array[idx] = idepthVar[idx];
+                gtDepth_array_local[idx] = gtDepth_array[idx];
                 
                 /*
                 if(std::isnan(gtDepth_array[idx]) || gtDepth_array[idx] == 0){
@@ -150,33 +155,42 @@ void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* cu
 		pc[idx].color[2] = color[idx];
 		pc[idx].color[3] = color[idx];
 	}
-
+        float scale = f->getScaledCamToWorld().scale();
 	keyframe_publisher.publish(fMsg);
         
-        cv::Mat keyFramDepth ;//= cv::Mat(h,w,CV_32FC1,keyFrameDepth_array);//);
-        cv::Mat curentDepth = cv::Mat(h,w,CV_32FC1,curentDepth_array);//lsdDepth_array);
+        cv::Mat keyFramDepth = cv::Mat(h,w,CV_32FC1,keyFrameDepth_array);//);
+        cv::Mat curentDepth ;//= cv::Mat(h,w,CV_32FC1,curentDepth_array);//lsdDepth_array);
                 //cv::Mat(2,&sizes[0],CV_32FC1,&idepth);
-        cv::Mat gtDepth = cv::Mat(h,w,CV_32FC1,gtDepth_array);
-        cv::Mat corrDepth = cv::Mat(h,w,CV_32FC1,correctedDepth);
+        cv::Mat gtDepth = cv::Mat(h,w,CV_32FC1,gtDepth_array_local);
+        cv::Mat corrDepth ;//= cv::Mat(h,w,CV_32FC1,correctedDepth);
         
         cv::Mat grayImage = cv::Mat(h,w,CV_8UC1, gray_img);
         
         cv::Mat depth_var = cv::Mat(h,w,CV_32FC1,depth_var_array);
             
-        
+        std_msgs::Float32  scaleMsg;
+        scaleMsg.data = scale;
+        scale_publisher.publish(scaleMsg);
         publishDepth2(curentDepth, gtDepth, corrDepth,keyFramDepth, grayImage, depth_var);
         
         //publishTrackedFrame(curentFrame, NULL);
-        /*
+        /**/
+        
+        if (1 == 1){
+         Sophus::SE3f relativeRefrance = se3FromSim3(f->getScaledCamToWorld()).inverse().cast<float>();// camToKeyframe.inverse().cast<float>();
+	  Sophus::SE3f referanceToKeyframe = se3FromSim3(curFame->getScaledCamToWorld()).inverse().cast<float>();
+         Sophus::SE3f referenceToFrame =  referanceToKeyframe ;//relativeRefrance *
+	//Eigen::Matrix3f rotMat = referenceToFrame.rotationMatrix();
+	//Eigen::Vector3f transVec = referenceToFrame.translation();
         geometry_msgs::PoseStamped pMsg;
 
-	pMsg.pose.position.x = camToWorld.translation()[0];
-	pMsg.pose.position.y = camToWorld.translation()[1];
-	pMsg.pose.position.z = camToWorld.translation()[2];
-	pMsg.pose.orientation.x = camToWorld.so3().unit_quaternion().x();
-	pMsg.pose.orientation.y = camToWorld.so3().unit_quaternion().y();
-	pMsg.pose.orientation.z = camToWorld.so3().unit_quaternion().z();
-	pMsg.pose.orientation.w = camToWorld.so3().unit_quaternion().w();
+	pMsg.pose.position.x = referenceToFrame.translation()[0];
+	pMsg.pose.position.y = referenceToFrame.translation()[1];
+	pMsg.pose.position.z = referenceToFrame.translation()[2];
+	pMsg.pose.orientation.x = referenceToFrame.so3().unit_quaternion().x();
+	pMsg.pose.orientation.y = referenceToFrame.so3().unit_quaternion().y();
+	pMsg.pose.orientation.z = referenceToFrame.so3().unit_quaternion().z();
+	pMsg.pose.orientation.w = referenceToFrame.so3().unit_quaternion().w();
 
 	if (pMsg.pose.orientation.w < 0)
 	{
@@ -189,7 +203,7 @@ void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* cu
 	//pMsg.header.stamp = ros::Time(kf->timestamp());
 	pMsg.header.frame_id = "world";
 	pose_publisher.publish(pMsg);
-        */
+        }
 }
 
 void ROSOutput3DWrapper::publishTrackedFrame(Frame* kf,float* gtDepth_array)
@@ -343,27 +357,29 @@ void ROSOutput3DWrapper::publishDepth2(cv::Mat lsdDepth,cv::Mat gtDepth, cv::Mat
      //cv::waitKey(0); 
      std::cout <<"depth size " << depth.rows <<" "<< depth.cols<<" "<<std::endl;
      */        
-    sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "32FC1", lsdDepth).toImageMsg();
-    depth_publisher.publish(msg);
+    //sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "32FC1", lsdDepth).toImageMsg();
+    //depth_publisher.publish(msg);
     
     sensor_msgs::ImagePtr msg_gt = cv_bridge::CvImage(std_msgs::Header(), "32FC1", gtDepth).toImageMsg();
     depth_gt_publisher.publish(msg_gt);
     
-    //sensor_msgs::ImagePtr msg_kf = cv_bridge::CvImage(std_msgs::Header(), "32FC1", keyFramDepth).toImageMsg();
-    //keyFrame_publisher.publish(msg_kf);
+    sensor_msgs::ImagePtr msg_kf = cv_bridge::CvImage(std_msgs::Header(), "32FC1", keyFramDepth).toImageMsg();
+    keyFrame_publisher.publish(msg_kf);
     
     sensor_msgs::ImagePtr msg_im = cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::image_encodings::MONO8, grayImage).toImageMsg();
     grayImage_publisher.publish(msg_im);
    
     /*
     */
-    sensor_msgs::ImagePtr msg_corr = cv_bridge::CvImage(std_msgs::Header(), "32FC1", corrDepth).toImageMsg();
-    depth_corr_publisher.publish(msg_corr);
+    //sensor_msgs::ImagePtr msg_corr = cv_bridge::CvImage(std_msgs::Header(), "32FC1", corrDepth).toImageMsg();
+    //depth_corr_publisher.publish(msg_corr);
     
     
     sensor_msgs::ImagePtr msg_var = cv_bridge::CvImage(std_msgs::Header(), "32FC1", depth_var).toImageMsg();
     depth_var_publisher.publish(msg_var);
      
+    
+    std::cout << "Writing to bag  "<<std::endl;
   
 }
 }

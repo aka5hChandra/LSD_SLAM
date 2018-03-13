@@ -32,7 +32,7 @@ int privateFrameAllocCount = 0;
 
 
 
-Frame::Frame(int id, int width, int height, const Eigen::Matrix3f& K, double timestamp, const unsigned char* image)
+Frame::Frame(int id, int width, int height, const Eigen::Matrix3f& K, double timestamp, const unsigned char* image,const cv::Mat&  senDepth)
 {
 	initialize(id, width, height, K, timestamp);
 	
@@ -44,7 +44,11 @@ Frame::Frame(int id, int width, int height, const Eigen::Matrix3f& K, double tim
 		*pt = *image;
 		image++;
 	}
-
+        //sensorDepth = *senDept
+        //  std::cout <<"fremae 1 "<<std::endl;
+        sensordepth = senDepth.clone();//new float[data.width[0]*data.height[0]];
+        //memcpy(sensordepth, senDepth, data.width[0]*data.height[0] * sizeof(float));
+	//std::cout <<"fremae 2 "<<std::endl;
 	data.imageValid[0] = true;
 
 	privateFrameAllocCount++;
@@ -60,6 +64,7 @@ Frame::Frame(int id, int width, int height, const Eigen::Matrix3f& K, double tim
 	data.image[0] = FrameMemory::getInstance().getFloatBuffer(data.width[0]*data.height[0]);
 	memcpy(data.image[0], image, data.width[0]*data.height[0] * sizeof(float));
 	data.imageValid[0] = true;
+       
 
 	privateFrameAllocCount++;
 

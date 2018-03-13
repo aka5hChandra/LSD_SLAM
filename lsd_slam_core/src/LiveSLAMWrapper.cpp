@@ -165,13 +165,13 @@ void LiveSLAMWrapper::newImageCallback(const cv::Mat& img, const cv::Mat& depth,
                   std::cout <<"depth check " << depthData[l] <<" ";
                 }
                 */
-                monoOdometry->gtDepthInit(grayImg.data, (float*)depth.data, imgTime.toSec(), 1);
+                monoOdometry->gtDepthInit(grayImg.data, depth, imgTime.toSec(), 1);//(float*)depth.data,
 		
 		isInitialized = true;
 	}
 	else if(isInitialized && monoOdometry != nullptr)
 	{
-		monoOdometry->trackFrame(grayImg.data,imageSeqNumber,false,imgTime.toSec(), (float*)depth.data);
+		monoOdometry->trackFrame(grayImg.data,imageSeqNumber,false,imgTime.toSec(), depth);//(float*)depth.data,
 	}
 }
 

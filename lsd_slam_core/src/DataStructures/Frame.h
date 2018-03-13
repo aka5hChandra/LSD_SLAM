@@ -27,6 +27,7 @@
 #include "DataStructures/FrameMemory.h"
 #include "unordered_set"
 #include "util/settings.h"
+#include "opencv2/core/core.hpp"
 
 
 namespace lsd_slam
@@ -45,7 +46,7 @@ public:
 	friend class FrameMemory;
 
 
-	Frame(int id, int width, int height, const Eigen::Matrix3f& K, double timestamp, const unsigned char* image);
+	Frame(int id, int width, int height, const Eigen::Matrix3f& K, double timestamp, const unsigned char* image, const cv::Mat&  sensorDepths );
 
 	Frame(int id, int width, int height, const Eigen::Matrix3f& K, double timestamp, const float* image);
 
@@ -140,7 +141,8 @@ public:
 		return FrameMemory::getInstance().activateFrame(this);
 	}
 
-
+        cv::Mat sensordepth;
+        //float* colorImage;
 	/*
 	 * ==================================================================================
 	 * Here are ALL central pose and scale informations.
@@ -175,7 +177,7 @@ public:
 	Eigen::Vector2f* permaRef_colorAndVarData;	// (I, Var)
 	int permaRefNumPts;
 
-
+       
 
 	// Temporary values
 	int referenceID;

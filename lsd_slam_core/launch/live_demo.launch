@@ -6,7 +6,7 @@
     <arg name="run_lsd_slam_viewer" default="false" />
     <arg name="run_rviz" default="true" />
     <arg name="play_bagfile" default="false" />
-    <arg name="record_bagfile" default="true" />
+    <arg name="record_bagfile" default="false" />
     <arg name="savefile" default="$(env HOME)/bags/lsd_slam_live_output.bag" />
 
     <arg name="driver_cv_camera" default="false" />
@@ -64,8 +64,13 @@
     <arg name="bag_topics" 
          default="/lsd_slam/graph /lsd_slam/keyframes /lsd_slam/liveframes"/> 
 
+    
+     <arg name="bag_topics_3" 
+         default=" lsd_slam/depth lsd_slam/depth_gt  lsd_slam/depth_corrected /camera/rgb/image_raw /camera_info "/> 
+
+    
     <node pkg="rosbag" type="record" name="recorder" output="screen" 
-          args="record -o $(arg savefile) $(arg bag_topics)"
+          args="record -o $(arg savefile) $(arg bag_topics_3)"
           if="$(arg record_bagfile)"/>
 
 </launch>

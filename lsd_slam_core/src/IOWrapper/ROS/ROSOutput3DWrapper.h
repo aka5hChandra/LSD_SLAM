@@ -65,7 +65,7 @@ public:
 	virtual void publishKeyframeGraph(KeyFrameGraph* graph);
 
 	// publishes a keyframe. if that frame already existis, it is overwritten, otherwise it is added.
-	virtual void publishKeyframe(Frame* f,float* gtDepth,float* curDepth,const float* curImage,SE3 camToWorld,float* correctedDepth,float* correctedDepthVar);
+	virtual void publishKeyframe(Frame* f,float* gtDepth,float* curDepth,const float* curImage,SE3 camToWorld,float* correctedDepth,float* correctedDepthVar, Frame* curFame);
 
 	// published a tracked frame that did not become a keyframe (i.e. has no depth data)
 	virtual void publishTrackedFrame(Frame* f,float* gtDepth);
@@ -120,6 +120,9 @@ private:
         
         std::string  depth_var_channel;
         ros::Publisher depth_var_publisher;
+        
+        std::string  scale_channel;
+        ros::Publisher scale_publisher;
         
 	ros::NodeHandle nh_;
 };

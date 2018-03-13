@@ -53,7 +53,7 @@ public:
 	virtual void publishKeyframeGraph(KeyFrameGraph* graph) {};
 
 	// publishes a keyframe. if that frame already existis, it is overwritten, otherwise it is added.
-	virtual void publishKeyframe(Frame* kf,float* gtDepth,float* curDepth,const float* curImage,SE3 camToWorld,float* correctedDepth,float* correctedDepthVar) {};
+	virtual void publishKeyframe(Frame* kf,float* gtDepth,float* curDepth,const float* curImage,SE3 camToWorld,float* correctedDepth,float* correctedDepthVar, Frame* curFame) {};
 
 	// published a tracked frame that did not become a keyframe (yet; i.e. has no depth data)
 	virtual void publishTrackedFrame(Frame* kf,float* gtDepth) {};

@@ -37,6 +37,7 @@
 #include <ros/package.h>
 
 #include "opencv2/opencv.hpp"
+#include "opencv2/core/core.hpp"
 
 std::string &ltrim(std::string &s) {
         s.erase(s.begin(), std::find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
@@ -237,7 +238,8 @@ int main( int argc, char** argv )
 
 		undistorter->undistort(imageDist, image);
 		assert(image.type() == CV_8U);
-                float * dummyData = new float [100];
+                //float * dummyData = new float [100];
+                cv::Mat dummyData;
 		if(runningIDX == 0)
 			system->randomInit(image.data, fakeTimeStamp, runningIDX);
 		else
