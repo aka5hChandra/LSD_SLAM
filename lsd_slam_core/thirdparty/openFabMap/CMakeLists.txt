@@ -24,7 +24,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR})
 # set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/bin)
 
 # required packages
-FIND_PACKAGE(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED)
 
 ############ end CMake setup ##################
 
@@ -42,7 +42,7 @@ ADD_LIBRARY(openFABMAP SHARED ${OPENFABMAP_FILES} ${OPENFABMAP_INCS})
 
 # Tell CMake where the headers are
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/include
-  /opt/ros/kinetic/include/opencv-3.2.0-dev/
+  #/opt/ros/kinetic/include/opencv-3.2.0-dev/
   ${OPENCV_INCLUDE_DIRS}
 )
 

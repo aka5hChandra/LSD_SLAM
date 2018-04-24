@@ -71,6 +71,7 @@ ELSE(WIN32) # Linux
 	/usr/local/include/opencv2
 	# system placed in /usr/include
 	/usr/include/opencv2
+        /opt/ros/kinetic/include/opencv-3.3.1-dev/opencv2
 	)
 	
 	if( OPENCV2_INCLUDE_PATH )

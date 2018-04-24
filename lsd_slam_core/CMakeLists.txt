@@ -63,6 +63,7 @@ endif()
 add_subdirectory(${PROJECT_SOURCE_DIR}/thirdparty/openFabMap)
 include_directories(
       /opt/ros/kinetic/include
+      #/opt/ros/kinetic/include/opencv-3.3.1-dev/
     ${PROJECT_SOURCE_DIR}/thirdparty/openFabMap/include
   ${OPENCV_INCLUDE_DIR}
 )

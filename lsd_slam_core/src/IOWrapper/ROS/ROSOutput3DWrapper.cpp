@@ -159,10 +159,10 @@ void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* cu
 	keyframe_publisher.publish(fMsg);
         
         cv::Mat keyFramDepth = cv::Mat(h,w,CV_32FC1,keyFrameDepth_array);//);
-        cv::Mat curentDepth ;//= cv::Mat(h,w,CV_32FC1,curentDepth_array);//lsdDepth_array);
+        cv::Mat curentDepth = cv::Mat(h,w,CV_32FC1,curentDepth_array);//lsdDepth_array);
                 //cv::Mat(2,&sizes[0],CV_32FC1,&idepth);
         cv::Mat gtDepth = cv::Mat(h,w,CV_32FC1,gtDepth_array_local);
-        cv::Mat corrDepth ;//= cv::Mat(h,w,CV_32FC1,correctedDepth);
+        cv::Mat corrDepth = cv::Mat(h,w,CV_32FC1,correctedDepth);
         
         cv::Mat grayImage = cv::Mat(h,w,CV_8UC1, gray_img);
         
@@ -171,12 +171,12 @@ void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* cu
         std_msgs::Float32  scaleMsg;
         scaleMsg.data = scale;
         scale_publisher.publish(scaleMsg);
-        publishDepth2(curentDepth, gtDepth, corrDepth,keyFramDepth, grayImage, depth_var);
+        //publishDepth2(curentDepth, gtDepth, corrDepth,keyFramDepth, grayImage, depth_var);
         
         //publishTrackedFrame(curentFrame, NULL);
         /**/
         
-        if (1 == 1){
+        if (0 == 1){
          Sophus::SE3f relativeRefrance = se3FromSim3(f->getScaledCamToWorld()).inverse().cast<float>();// camToKeyframe.inverse().cast<float>();
 	  Sophus::SE3f referanceToKeyframe = se3FromSim3(curFame->getScaledCamToWorld()).inverse().cast<float>();
          Sophus::SE3f referenceToFrame =  referanceToKeyframe ;//relativeRefrance *
@@ -209,7 +209,7 @@ void ROSOutput3DWrapper::publishKeyframe(Frame* f,float* gtDepth_array,float* cu
 void ROSOutput3DWrapper::publishTrackedFrame(Frame* kf,float* gtDepth_array)
 {
     //if(gtDepth_array == NULL)
-    if(0==1)
+    if(1==1)
         {
 	lsd_slam_viewer::keyframeMsg fMsg;
 
@@ -285,7 +285,7 @@ void ROSOutput3DWrapper::publishTrackedFrame(Frame* kf,float* gtDepth_array)
 
 void ROSOutput3DWrapper::publishKeyframeGraph(KeyFrameGraph* graph)
 {
-    if(0==1)
+    if(1==1)
         {
 	lsd_slam_viewer::keyframeGraphMsg gMsg;
 
@@ -357,8 +357,8 @@ void ROSOutput3DWrapper::publishDepth2(cv::Mat lsdDepth,cv::Mat gtDepth, cv::Mat
      //cv::waitKey(0); 
      std::cout <<"depth size " << depth.rows <<" "<< depth.cols<<" "<<std::endl;
      */        
-    //sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "32FC1", lsdDepth).toImageMsg();
-    //depth_publisher.publish(msg);
+    sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "32FC1", lsdDepth).toImageMsg();
+    depth_publisher.publish(msg);
     
     sensor_msgs::ImagePtr msg_gt = cv_bridge::CvImage(std_msgs::Header(), "32FC1", gtDepth).toImageMsg();
     depth_gt_publisher.publish(msg_gt);
@@ -371,8 +371,8 @@ void ROSOutput3DWrapper::publishDepth2(cv::Mat lsdDepth,cv::Mat gtDepth, cv::Mat
    
     /*
     */
-    //sensor_msgs::ImagePtr msg_corr = cv_bridge::CvImage(std_msgs::Header(), "32FC1", corrDepth).toImageMsg();
-    //depth_corr_publisher.publish(msg_corr);
+    sensor_msgs::ImagePtr msg_corr = cv_bridge::CvImage(std_msgs::Header(), "32FC1", corrDepth).toImageMsg();
+    depth_corr_publisher.publish(msg_corr);
     
     
     sensor_msgs::ImagePtr msg_var = cv_bridge::CvImage(std_msgs::Header(), "32FC1", depth_var).toImageMsg();

@@ -8,7 +8,7 @@
     <arg name="play_bagfile" default="true" />
     <arg name="record_bagfile" default="true" />
     
-    <arg name="savefile" default="$(env HOME)/bags/lsd_slam_from_bag_output.bag" />
+    <arg name="savefile" default="$(env HOME)/bags/lsd_slam_from_bag_output_2018-04-23-23-00-58.bag" />
 
     <arg name="driver_cv_camera" default="false" />
     <arg name="driver_openni2" default="false" />
@@ -81,11 +81,11 @@
       <arg name="bag_topics_3" 
          default=" lsd_slam/depth lsd_slam/depth_gt lsd_slam/depth_var lsd_slam/depth_kf lsd_slam/depth_corrected /camera/rgb/image_raw /camera_info "/> 
  <arg name="bag_topics_4" 
-         default="lsd_slam/scale lsd_slam/pose lsd_slam/depth_gt r lsd_slam/depth_kf  lsd_slam/depth_var /camera/rgb/image_raw /camera_info "/> 
+         default="lsd_slam/depth lsd_slam/scale lsd_slam/pose lsd_slam/depth_gt r lsd_slam/depth_kf lsd_slam/depth_corrected  lsd_slam/depth_var /camera/rgb/image_raw /camera_info "/> 
 
     
     <node pkg="rosbag" type="record" name="recorder" output="screen" 
-          args="record -o $(arg savefile) $(arg bag_topics_4)"
+          args="record -o $(arg savefile) $(arg bag_topics)"
           if="$(arg record_bagfile)"/>
 
 </launch>

@@ -443,7 +443,7 @@ void SlamSystem::finishCurrentKeyframe()
         
         //updateGlobalScale();
 	//if(outputWrapper!= 0)
-		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
+//		outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 }
 
 void SlamSystem::discardCurrentKeyframe()
@@ -513,7 +513,7 @@ void SlamSystem::createNewCurrentKeyframe(std::shared_ptr<Frame> newKeyframeCand
         
          if(outputWrapper!= 0)
 	{	
-            ///outputWrapper->publishKeyframe(currentKeyFrame.get(),(float*)currentKeyFrame.get()->sensordepth.data,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth,currentKeyFrame.get());
+            outputWrapper->publishKeyframe(currentKeyFrame.get(),(float*)currentKeyFrame.get()->sensordepth.data,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth,currentKeyFrame.get());
         }
 }
 void SlamSystem::loadNewCurrentKeyframe(Frame* keyframeToLoad)
@@ -637,7 +637,7 @@ bool SlamSystem::updateKeyframe()
 
         //updateGlobalScale();
 	//if(outputWrapper != 0 && continuousPCOutput && currentKeyFrame != 0)
-		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
+	//	outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,currentFrame,correctedDepth,prevCorrectedDepth);
 
 	return true;
 }
@@ -1000,17 +1000,19 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
 			trackingReference,
 			trackingNewFrame.get(),
 			frameToReference_initialEstimate);
-        /*
-        if(fuseAllframes)
+        /**/
+        if(1 == 1)
         {
-        //getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,sensorDepth);
+        getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,(float*)sensorDepth.data);
                 
          const float* color = trackingNewFrame.get()->image(0);
         curImage =  color;
-        if(outputWrapper!= 0)
-		outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,newRefToFrame_poseUpdate,correctedDepth,prevCorrectedDepth);
-
-        }*/
+        if(outputWrapper!= 0){
+		//outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,newRefToFrame_poseUpdate,correctedDepth,prevCorrectedDepth);
+                  outputWrapper->publishKeyframe(currentKeyFrame.get(),sensorDepth_,curDepth,curImage,newRefToFrame_poseUpdate,correctedDepth,prevCorrectedDepth,trackingNewFrame.get());
+           
+        }
+        }
         
 	gettimeofday(&tv_end, NULL);
 	msTrackFrame = 0.9*msTrackFrame + 0.1*((tv_end.tv_sec-tv_start.tv_sec)*1000.0f + (tv_end.tv_usec-tv_start.tv_usec)/1000.0f);
@@ -1071,9 +1073,9 @@ void SlamSystem::trackFrame(uchar* image, unsigned int frameID, bool blockUntilM
                 map->depth.setTo(0,map->valid == 0);// map->depth * valid;
                 outputWrapper->publishDepth(map->depth);
 	}
-         if(fuseAllframes)
+         if(0 ==1)
         {
-        //getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,sensorDepth);
+        getCurentDepthMap(trackingNewFrame.get(), newRefToFrame_poseUpdate,  trackingReference,(float*)sensorDepth.data);
                 
          const float* color = trackingNewFrame.get()->image(0);
         curImage =  color;
@@ -1859,6 +1861,173 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
       
         std::memset(correctedDepth, 0,  w*h *sizeof(float));
         
+      
+	Eigen::Matrix3f KLvl = frame->K(level);
+	float fx_l = KLvl(0,0);
+	float fy_l = KLvl(1,1);
+	float cx_l = KLvl(0,2);
+	float cy_l = KLvl(1,2);
+        
+        Eigen::Matrix3f KInvLvl = frame->KInv(level);
+        
+        float fxInv =  KInvLvl(0,0);
+        float cxInv =  KInvLvl(1,1);
+        float fyInv =  KInvLvl(0,2);
+        float cyInv =  KInvLvl(1,2); 
+        
+       
+        reference->makePointCloud(level);
+        const Eigen::Vector3f* refPoint = reference->posData[level];
+        int refNum = reference->numData[level];
+	const Eigen::Vector3f* refPoint_max = refPoint + refNum;
+       
+        Sophus::SE3f referenceToFrame = referenceToFrame_0.inverse().cast<float>();
+	
+         
+	Eigen::Matrix3f rotMat = referenceToFrame.rotationMatrix();
+	Eigen::Vector3f transVec = referenceToFrame.translation();
+        
+        const float* color = frame->image(level);
+        curImage =  color;
+        std::vector<cv::Point3f> objectPoints;
+        std::vector<cv::Point2f> imagePoints;
+        
+        const float* var = reference->keyframe->idepthVar(level);
+        /*
+        
+	//std::cout <<"widt height "<<w<< " "<<h <<std::endl;
+        int u = 0;
+        int v = 0;
+        int scaleCount = 0;
+        float sensorSum = 0;
+        float lsdSum = 0;
+        //float scale = 0;
+        
+        
+	for(;refPoint<refPoint_max; refPoint++)
+	{
+                
+		Eigen::Vector3f Wxp = rotMat * (*refPoint) + transVec;
+                
+		float u_new = (Wxp[0]/Wxp[2])*fx_l + cx_l;
+		float v_new = (Wxp[1]/Wxp[2])*fy_l + cy_l;
+                if(!(u_new > 0 && v_new > 0 && u_new < w && v_new < h))
+		{
+			
+			continue;
+		}
+                
+                int id = int(u_new)  + (int(v_new)* w);
+                
+                //int id_orig = u + ( v * w);
+                
+                //std::cout <<u_new<<" "<<v_new<<" "<<id<<" "<<Wxp[2]<<std::endl;
+                
+                //curDepth[id]= Wxp[2];
+                
+                //curImage[id_orig] = color[id_orig];
+                 //std::cout << " 2.5 "<<std::endl;
+                 // std::cout << id <<" "<<!std::isnan(sensorDepth[id]) <<std::endl;
+                //compute scale
+                if((!std::isnan(sensorDepth[id])) && sensorDepth[id] > 0 && Wxp[2]> 0){
+                  //std::cout << id << std::endl;
+                    scaleCount++;
+                sensorSum +=sensorDepth[id];
+                lsdSum += Wxp[2];
+                    
+                }
+                    
+                
+                
+                //objectPoints.push_back(cv::Point3f(Wxp[0],Wxp[1],Wxp[2]));
+        }
+        
+        float scale = sensorSum / lsdSum;
+         */
+        float scale = 1 / reference->keyframe->getScaledCamToWorld().scale();;
+       // std::cout <<"scale is " << scale << std::endl;
+        float sensorDepthMultiplyer =  0.001425;
+        refPoint = reference->posData[level];
+        std::memcpy(correctedDepth, sensorDepth,  w*h *sizeof(float));
+        //& !std::isinf(scale)
+        //if(scale != 0   &  !std::isnan(scale) )
+        { 
+            //std::cout <<"scale is " << scale << std::endl;
+        for(;refPoint<refPoint_max; refPoint++)
+	{
+            Eigen::Vector3f Wxp ;
+            //if (fuseAllframes)
+		 Wxp = (rotMat * (1 *  (*refPoint))) + transVec;
+            //else
+             //   Wxp = (scale *  (*refPoint));
+            
+		float u_new = (Wxp[0]/Wxp[2])*fx_l + cx_l;
+		float v_new = (Wxp[1]/Wxp[2])*fy_l + cy_l;
+                if(!(u_new > 0 && v_new > 0 && u_new < w && v_new < h))
+		{
+			
+			continue;
+		}
+                
+                int id = int(u_new)  + (int(v_new)* w);
+                
+                curDepth[id]= Wxp[2];
+                float lsdDepth = curDepth[id];
+                float sensDepth = sensorDepth[id];
+                float senV =  sensorDepthMultiplyer * sensDepth * sensDepth;;
+                float lsdV = var[id];
+                
+                //& !std::isinf(sensDepth) 
+                 if((!std::isnan(sensDepth)  & sensDepth  >0)){
+                              correctedDepth[id] = sensDepth;
+                               float er = (sensDepth - lsdDepth) * (sensDepth - lsdDepth);
+                             if((!std::isnan(lsdDepth) & !std::isinf(lsdDepth) & lsdDepth  >0 & er < 1)){
+                                 
+                                  float newVar = computeNewVar( senV ,  lsdV);
+                                  float newDepth =  computeNewMean( sensDepth ,  senV , lsdDepth,  lsdV) ;
+                                 
+                                  correctedDepth[id] = newDepth;
+                                  //fusedVar(w,h) = newVar;
+                                  }
+                          
+                 } //&  !std::isinf(lsdDepth)
+                                else if ((!std::isnan(lsdDepth))  & lsdDepth  >0 ){
+                             correctedDepth[id] = lsdDepth;
+                              //fusedVar(w,h) = lsdvar;
+                              }
+                
+                //std::cout <<"here " << correctedDepth[id]  << std::endl;
+         }
+        }
+        
+      
+        
+}
+
+
+
+/*
+void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceToFrame_0, TrackingReference* reference, float* sensorDepth)
+{
+        //correctedDepth;
+        //prevCorrectedFrame;
+        /*
+        if(frame->id == 1){
+        //prevCorrectedDepth.reset(new Frame(1, width, height, K, frame->timeStamp, image));
+              //prevCorrectedDepth  = new TrackingReference();
+           }
+        * /
+        int level = 0;//QUICK_KF_CHECK_LVL;
+        
+        int w = frame->width(level);
+	int h = frame->height(level);
+        
+        
+        //std::cout << " 1 "<<std::endl; 
+        std::memset(curDepth, 0,  w*h *sizeof(float));
+      
+        std::memset(correctedDepth, 0,  w*h *sizeof(float));
+        
         /*
         if(frame->id() == 1){
             for(int i = 0 ; i < w *h ;i ++){
@@ -1866,7 +2035,7 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
             }
             return;
         }
-        */
+        * /
         //std::cout << " 2 "<<std::endl;
         //std::memset(curImage, 0,  w*h *sizeof(float));
         
@@ -1953,7 +2122,7 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
         }
         
         float scale = sensorSum / lsdSum;
-         */
+         * /
         float scale = globalScale;
        // std::cout <<"scale is " << scale << std::endl;
         float sensorDepthMultiplyer =  0.001425;
@@ -2237,6 +2406,7 @@ void SlamSystem::getCurentDepthMap(Frame* frame ,  const Sophus::SE3& referenceT
                 direction << (xx,yy,-4);
             }
         }
-         */ 
+         * / 
         
 }
+*/
